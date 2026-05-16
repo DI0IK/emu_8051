@@ -3,7 +3,6 @@ package dev.dominikstahl.emu_8051.platform
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
-import kotlinx.cinterop.cstr
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toKString
 import platform.Foundation.NSDocumentDirectory
@@ -33,9 +32,9 @@ class IosFileStorage : FileStorage {
         return try {
             val path = "$storageDir/$name"
             memScoped {
-                val file = fopen(path.cstr.ptr, "w".cstr.ptr)
+                val file = fopen(path, "w")
                     ?: return@memScoped false
-                fputs(content.cstr.ptr, file)
+                fputs(content, file)
                 fclose(file)
                 true
             }
@@ -49,7 +48,7 @@ class IosFileStorage : FileStorage {
         return try {
             val path = "$storageDir/$name"
             memScoped {
-                val file = fopen(path.cstr.ptr, "r".cstr.ptr)
+                val file = fopen(path, "r")
                     ?: return@memScoped null
                 val buffer = allocArray<ByteVar>(4096)
                 val sb = StringBuilder()
