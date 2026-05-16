@@ -9,13 +9,6 @@ sealed class OpcodePattern {
     class IndirectRange(val base: Int) : OpcodePattern()
 
     class PageRange(val base: Int, val step: Int = 0x20) : OpcodePattern()
-
-    fun opcodes(): Sequence<Int> = when (this) {
-        is Fixed -> sequenceOf(opcode)
-        is RegisterRange -> (base..base + 7).asSequence()
-        is IndirectRange -> (base..base + 1).asSequence()
-        is PageRange -> (0..7).asSequence().map { base + it * step }
-    }
 }
 
 enum class Operand {
@@ -211,16 +204,6 @@ enum class Instruction(
     ;
 
     companion object {
-        val byOpcode: Array<Instruction?> = run {
-            val arr = arrayOfNulls<Instruction>(256)
-            for (inst in entries) {
-                for (op in inst.pattern.opcodes()) {
-                    arr[op] = inst
-                }
-            }
-            arr
-        }
-
         val byMnemonic: Map<String, List<Instruction>> = entries.groupBy { it.mnemonic }
 
         fun lookup(mnemonic: String, vararg operands: Operand): Instruction? =

@@ -153,11 +153,14 @@ class EmulatorViewModel(
                 mutex.withLock {
                     if (cyclesToRun > 0) {
                         val breakpoints = _uiState.value.breakpoints
+                        val hasBreakpoints = breakpoints.isNotEmpty()
                         for (i in 0 until cyclesToRun) {
-                            val currentLine = pcToLineMap[cpuState.pc]
-                            if (!skipFirstBreakpointCheck && currentLine != null && currentLine in breakpoints) {
-                                breakpointHit = true
-                                break
+                            if (hasBreakpoints && !skipFirstBreakpointCheck) {
+                                val currentLine = pcToLineMap[cpuState.pc]
+                                if (currentLine != null && currentLine in breakpoints) {
+                                    breakpointHit = true
+                                    break
+                                }
                             }
                             skipFirstBreakpointCheck = false
                             interpreter.step()
@@ -296,14 +299,24 @@ class EmulatorViewModel(
         _uiState.value = _uiState.value.copy(componentSnapshots = snapshots)
     }
 
+    private var needsTickComponents: List<HwComponent>? = null
+
     private fun tickComponents() {
-        for (comp in _uiState.value.hwConfig) {
-            if (!comp.enabled) continue
-            val factory = HwRegistry.get(comp.type)
-            if (factory != null && factory.needsTick(comp)) {
-                val c = getOrCreateComponent(comp)
-                    c.tick(cpuState.getEffectivePort(comp.port.ordinal))
+        var list = needsTickComponents
+        if (list == null) {
+            list = buildList {
+                for (comp in _uiState.value.hwConfig) {
+                    if (!comp.enabled) continue
+                    val factory = HwRegistry.get(comp.type) ?: continue
+                    if (factory.needsTick(comp)) {
+                        add(getOrCreateComponent(comp))
+                    }
+                }
             }
+            needsTickComponents = list
+        }
+        for (c in list) {
+            c.tick(cpuState.getEffectivePort(c.config.port.ordinal))
         }
     }
 
@@ -347,6 +360,7 @@ class EmulatorViewModel(
     fun getSfrForDisplay(): UByteArray = cpuState.sfr
 
     fun updateHwConfig(config: List<HwComponentConfig>) {
+        needsTickComponents = null
         _uiState.value = _uiState.value.copy(hwConfig = config)
     }
 
@@ -360,12 +374,14 @@ class EmulatorViewModel(
 
     fun addHwComponent(typeId: String) {
         val comp = defaultForType(typeId) ?: return
+        needsTickComponents = null
         _uiState.value = _uiState.value.copy(
             hwConfig = _uiState.value.hwConfig + comp
         )
     }
 
     fun removeHwComponent(id: String) {
+        needsTickComponents = null
         viewModelScope.launch(Dispatchers.Default) {
             mutex.withLock {
                 components.remove(id)
@@ -377,6 +393,7 @@ class EmulatorViewModel(
     }
 
     fun updateHwComponent(id: String, transform: (HwComponentConfig) -> HwComponentConfig) {
+        needsTickComponents = null
         viewModelScope.launch(Dispatchers.Default) {
             mutex.withLock {
                 components.remove(id)

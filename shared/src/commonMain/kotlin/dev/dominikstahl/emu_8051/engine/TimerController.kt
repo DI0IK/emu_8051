@@ -1,7 +1,5 @@
 package dev.dominikstahl.emu_8051.engine
 
-import dev.dominikstahl.emu_8051.engine.ops.InstructionHandler
-
 @OptIn(ExperimentalUnsignedTypes::class)
 class TimerController(private val state: CpuState) {
 
@@ -40,9 +38,9 @@ class TimerController(private val state: CpuState) {
     // ========================================================================
 
     private fun tickTimer0(mode: Int, tmod: Int, tcon: Int, t0Pin: Boolean) {
-        val gate = (tmod and InstructionHandler.GATE0_BIT) != 0
-        val ct = (tmod and InstructionHandler.CT0_BIT) != 0
-        val tr = (tcon and InstructionHandler.TR0_BIT) != 0
+        val gate = (tmod and GATE0_BIT) != 0
+        val ct = (tmod and CT0_BIT) != 0
+        val tr = (tcon and TR0_BIT) != 0
         val int0 = (state.getEffectivePort(3) and 0x04) == 0
 
         if (!tr) return
@@ -61,23 +59,23 @@ class TimerController(private val state: CpuState) {
             0 -> {
                 if ((tl and 0x1F) == 0) {
                     th = (th + 1) and 0xFF
-                    if (th == 0) setTCONbit(InstructionHandler.TF0_BIT)
+                    if (th == 0) setTCONbit(TF0_BIT)
                 }
             }
             1 -> {
                 if (tl == 0) {
                     th = (th + 1) and 0xFF
-                    if (th == 0) setTCONbit(InstructionHandler.TF0_BIT)
+                    if (th == 0) setTCONbit(TF0_BIT)
                 }
             }
             2 -> {
                 if (tl == 0) {
                     tl = state.TH0.toInt()
-                    setTCONbit(InstructionHandler.TF0_BIT)
+                    setTCONbit(TF0_BIT)
                 }
             }
             3 -> {
-                if (tl == 0) setTCONbit(InstructionHandler.TF0_BIT)
+                if (tl == 0) setTCONbit(TF0_BIT)
             }
         }
 
@@ -86,12 +84,12 @@ class TimerController(private val state: CpuState) {
     }
 
     private fun tickTimer0_TH0(tcon: Int) {
-        val tr1 = (tcon and InstructionHandler.TR1_BIT) != 0
+        val tr1 = (tcon and TR1_BIT) != 0
         if (!tr1) return
 
         var th = state.TH0.toInt()
         th = (th + 1) and 0xFF
-        if (th == 0) setTCONbit(InstructionHandler.TF1_BIT)
+        if (th == 0) setTCONbit(TF1_BIT)
         state.TH0 = th.toUByte()
     }
 
@@ -103,9 +101,9 @@ class TimerController(private val state: CpuState) {
         if (mode == 3) return
 
         val timer0StealsTF1 = timer0mode == 3
-        val gate = (tmod and InstructionHandler.GATE1_BIT) != 0
-        val ct = (tmod and InstructionHandler.CT1_BIT) != 0
-        val tr = (tcon and InstructionHandler.TR1_BIT) != 0
+        val gate = (tmod and GATE1_BIT) != 0
+        val ct = (tmod and CT1_BIT) != 0
+        val tr = (tcon and TR1_BIT) != 0
         val int1 = (state.getEffectivePort(3) and 0x08) == 0
 
         if (!tr) return
@@ -128,19 +126,19 @@ class TimerController(private val state: CpuState) {
                 0 -> {
                     if ((tl and 0x1F) == 0) {
                         th = (th + 1) and 0xFF
-                        if (th == 0) setTCONbit(InstructionHandler.TF1_BIT)
+                        if (th == 0) setTCONbit(TF1_BIT)
                     }
                 }
                 1 -> {
                     if (tl == 0) {
                         th = (th + 1) and 0xFF
-                        if (th == 0) setTCONbit(InstructionHandler.TF1_BIT)
+                        if (th == 0) setTCONbit(TF1_BIT)
                     }
                 }
                 2 -> {
                     if (tl == 0) {
                         tl = state.TH1.toInt()
-                        setTCONbit(InstructionHandler.TF1_BIT)
+                        setTCONbit(TF1_BIT)
                     }
                 }
             }
@@ -156,17 +154,17 @@ class TimerController(private val state: CpuState) {
 
     private fun tickTimer2(tcon: Int, p1: Int, t2Pin: Boolean, fallingT2EX: Boolean) {
         val t2con = state.T2CON.toInt()
-        val tr2 = (t2con and InstructionHandler.TR2_BIT) != 0
+        val tr2 = (t2con and TR2_BIT) != 0
         if (!tr2) return
 
-        val ct2 = (t2con and InstructionHandler.CT2_BIT) != 0
-        val rclk = (t2con and InstructionHandler.RCLK_BIT) != 0
-        val tclk = (t2con and InstructionHandler.TCLK_BIT) != 0
-        val cprl2 = (t2con and InstructionHandler.CPRL2_BIT) != 0
-        val exen2 = (t2con and InstructionHandler.EXEN2_BIT) != 0
+        val ct2 = (t2con and CT2_BIT) != 0
+        val rclk = (t2con and RCLK_BIT) != 0
+        val tclk = (t2con and TCLK_BIT) != 0
+        val cprl2 = (t2con and CPRL2_BIT) != 0
+        val exen2 = (t2con and EXEN2_BIT) != 0
         val t2mod = state.T2MOD.toInt()
-        val t2oe = (t2mod and InstructionHandler.T2OE_BIT) != 0
-        val dcen = (t2mod and InstructionHandler.DCEN_BIT) != 0
+        val t2oe = (t2mod and T2OE_BIT) != 0
+        val dcen = (t2mod and DCEN_BIT) != 0
         val isBaudGen = rclk || tclk
 
         var tl = state.TL2.toInt()
@@ -197,13 +195,13 @@ class TimerController(private val state: CpuState) {
                     tl = rcapl
                     th = rcaph
                 }
-                setT2CONbit(InstructionHandler.TF2_BIT)
+                setT2CONbit(TF2_BIT)
             } else if (!cprl2) {
-                setT2CONbit(InstructionHandler.TF2_BIT)
+                setT2CONbit(TF2_BIT)
                 tl = rcapl
                 th = rcaph
             } else {
-                setT2CONbit(InstructionHandler.TF2_BIT)
+                setT2CONbit(TF2_BIT)
             }
 
             if (t2oe) {
@@ -219,7 +217,7 @@ class TimerController(private val state: CpuState) {
                 th = state.RCAP2H.toInt()
                 tl = state.RCAP2L.toInt()
             }
-            setT2CONbit(InstructionHandler.EXF2_BIT)
+            setT2CONbit(EXF2_BIT)
         }
 
         state.TL2 = tl.toUByte()

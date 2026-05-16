@@ -1,7 +1,5 @@
 package dev.dominikstahl.emu_8051.engine
 
-import dev.dominikstahl.emu_8051.engine.ops.InstructionHandler
-
 private data class InterruptSource(
     val index: Int,
     val vector: Int,
@@ -26,26 +24,26 @@ class InterruptController(private val state: CpuState) {
     var lastInterruptCycles: Int = 0
 
     private val sources = listOf(
-        InterruptSource(0, 0x0003, InstructionHandler.IE0_BIT, InstructionHandler.TCON_ADDR,
-            InstructionHandler.EX0_BIT, InstructionHandler.IE_ADDR,
-            InstructionHandler.PX0_BIT, InstructionHandler.IP_ADDR, true),
-        InterruptSource(1, 0x000B, InstructionHandler.TF0_BIT, InstructionHandler.TCON_ADDR,
-            InstructionHandler.ET0_BIT, InstructionHandler.IE_ADDR,
-            InstructionHandler.PT0_BIT, InstructionHandler.IP_ADDR, false),
-        InterruptSource(2, 0x0013, InstructionHandler.IE1_BIT, InstructionHandler.TCON_ADDR,
-            InstructionHandler.EX1_BIT, InstructionHandler.IE_ADDR,
-            InstructionHandler.PX1_BIT, InstructionHandler.IP_ADDR, true),
-        InterruptSource(3, 0x001B, InstructionHandler.TF1_BIT, InstructionHandler.TCON_ADDR,
-            InstructionHandler.ET1_BIT, InstructionHandler.IE_ADDR,
-            InstructionHandler.PT1_BIT, InstructionHandler.IP_ADDR, false),
-        InterruptSource(4, 0x0023, InstructionHandler.TI_BIT or InstructionHandler.RI_BIT,
-            InstructionHandler.SCON_ADDR,
-            InstructionHandler.ES_BIT, InstructionHandler.IE_ADDR,
-            InstructionHandler.PS_BIT, InstructionHandler.IP_ADDR, false),
-        InterruptSource(5, 0x002B, InstructionHandler.TF2_BIT or InstructionHandler.EXF2_BIT,
-            InstructionHandler.T2CON_ADDR,
-            InstructionHandler.ET2_BIT, InstructionHandler.IE_ADDR,
-            InstructionHandler.PT2_BIT, InstructionHandler.IP_ADDR, false),
+        InterruptSource(0, 0x0003, IE0_BIT, TCON_ADDR,
+            EX0_BIT, IE_ADDR,
+            PX0_BIT, IP_ADDR, true),
+        InterruptSource(1, 0x000B, TF0_BIT, TCON_ADDR,
+            ET0_BIT, IE_ADDR,
+            PT0_BIT, IP_ADDR, false),
+        InterruptSource(2, 0x0013, IE1_BIT, TCON_ADDR,
+            EX1_BIT, IE_ADDR,
+            PX1_BIT, IP_ADDR, true),
+        InterruptSource(3, 0x001B, TF1_BIT, TCON_ADDR,
+            ET1_BIT, IE_ADDR,
+            PT1_BIT, IP_ADDR, false),
+        InterruptSource(4, 0x0023, TI_BIT or RI_BIT,
+            SCON_ADDR,
+            ES_BIT, IE_ADDR,
+            PS_BIT, IP_ADDR, false),
+        InterruptSource(5, 0x002B, TF2_BIT or EXF2_BIT,
+            T2CON_ADDR,
+            ET2_BIT, IE_ADDR,
+            PT2_BIT, IP_ADDR, false),
     )
 
     /** Sample external interrupt pins and latch edge-triggered flags. Call once per machine cycle. */
@@ -55,27 +53,27 @@ class InterruptController(private val state: CpuState) {
         val int0 = (p3 and 0x04) == 0
         val int1 = (p3 and 0x08) == 0
 
-        if ((tcon and InstructionHandler.IT0_BIT) != 0) {
+        if ((tcon and IT0_BIT) != 0) {
             if (prevInt0 && !int0) {
-                state.TCON = ((tcon or InstructionHandler.IE0_BIT) and 0xFF).toUByte()
+                state.TCON = ((tcon or IE0_BIT) and 0xFF).toUByte()
             }
         } else {
             if (int0) {
-                state.TCON = ((tcon or InstructionHandler.IE0_BIT) and 0xFF).toUByte()
+                state.TCON = ((tcon or IE0_BIT) and 0xFF).toUByte()
             } else {
-                state.TCON = ((tcon and InstructionHandler.IE0_BIT.inv()) and 0xFF).toUByte()
+                state.TCON = ((tcon and IE0_BIT.inv()) and 0xFF).toUByte()
             }
         }
 
-        if ((tcon and InstructionHandler.IT1_BIT) != 0) {
+        if ((tcon and IT1_BIT) != 0) {
             if (prevInt1 && !int1) {
-                state.TCON = ((tcon or InstructionHandler.IE1_BIT) and 0xFF).toUByte()
+                state.TCON = ((tcon or IE1_BIT) and 0xFF).toUByte()
             }
         } else {
             if (int1) {
-                state.TCON = ((tcon or InstructionHandler.IE1_BIT) and 0xFF).toUByte()
+                state.TCON = ((tcon or IE1_BIT) and 0xFF).toUByte()
             } else {
-                state.TCON = ((tcon and InstructionHandler.IE1_BIT.inv()) and 0xFF).toUByte()
+                state.TCON = ((tcon and IE1_BIT.inv()) and 0xFF).toUByte()
             }
         }
 
@@ -87,7 +85,7 @@ class InterruptController(private val state: CpuState) {
     fun poll(): Int {
         lastInterruptCycles = 0
 
-        if ((state.IE.toInt() and InstructionHandler.EA_BIT) == 0) return 0
+        if ((state.IE.toInt() and EA_BIT) == 0) return 0
 
         for (source in sources) {
             val flagReg = readSFR(source.flagAddr)
@@ -142,8 +140,8 @@ class InterruptController(private val state: CpuState) {
 
         if (source.autoClearEdge) {
             val isEdge = when (source.index) {
-                0 -> (state.TCON.toInt() and InstructionHandler.IT0_BIT) != 0
-                2 -> (state.TCON.toInt() and InstructionHandler.IT1_BIT) != 0
+                0 -> (state.TCON.toInt() and IT0_BIT) != 0
+                2 -> (state.TCON.toInt() and IT1_BIT) != 0
                 else -> false
             }
             if (isEdge) {

@@ -23,6 +23,9 @@ class CpuState {
     /** Special Function Register space, 128 bytes (0x80-0xFF). Indexed as sfr[addr - 0x80]. */
     val sfr = UByteArray(128)
 
+    /** Cached register bank base address (0, 8, 16, or 24). Updated when PSW is written. */
+    var registerBankBase: Int = 0
+
     /** Total cycles executed since last reset. */
     var totalCycles: Long = 0L
 
@@ -282,7 +285,10 @@ class CpuState {
      */
     var PSW: UByte
         get() = sfr[0xD0 - 0x80]
-        set(value) { sfr[0xD0 - 0x80] = value }
+        set(value) {
+            sfr[0xD0 - 0x80] = value
+            registerBankBase = ((value.toInt() shr 3) and 0x03) * 8
+        }
 
     /**
      * Accumulator at 0xE0 (bit-addressable). The primary working register for
@@ -338,6 +344,7 @@ class CpuState {
         } else {
             sfr[addr - 0x80] = value
             if (addr == 0xE0) updateParity()
+            if (addr == 0xD0) registerBankBase = ((value.toInt() shr 3) and 0x03) * 8
             if (addr == 0xA8 || addr == 0xB8) interruptControllerAccessFlag = true
         }
     }
