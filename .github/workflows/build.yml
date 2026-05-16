@@ -149,7 +149,7 @@ jobs:
 
   ios:
     name: iOS
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: test
     steps:
       - uses: actions/checkout@v4
