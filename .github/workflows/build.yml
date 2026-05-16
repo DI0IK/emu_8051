@@ -30,7 +30,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.event_name != 'push' }}
-      - run: ./gradlew :shared:jvmTest :shared:wasmJsTest
+      - run: ./gradlew :shared:jvmTest :shared:compileKotlinWasmJs
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -122,6 +122,59 @@ jobs:
           path: |
             desktop-windows.zip
             desktopApp/build/compose/binaries/main/*/*.msi
+
+  desktop-macos:
+    name: Desktop macOS
+    runs-on: macos-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name != 'push' }}
+      - run: ./gradlew :desktopApp:packageDmg :desktopApp:createDistributable
+      - name: Package portable tar.gz
+        run: tar czf desktop-macos.tar.gz -C desktopApp/build/compose/binaries/main app/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: |
+            desktop-macos.tar.gz
+            desktopApp/build/compose/binaries/main/dmg/*.dmg
+
+  ios:
+    name: iOS
+    runs-on: macos-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name != 'push' }}
+      - name: Build iOS app
+        run: |
+          cd iosApp
+          xcodebuild -project iosApp.xcodeproj -scheme iosApp \
+            -destination 'generic/platform=iOS' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-app
+          path: iosApp/build/
 
   web:
     name: Web

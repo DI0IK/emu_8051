@@ -66,6 +66,9 @@ kotlin {
         jsMain.dependencies {
             implementation(libs.wrappers.browser)
         }
+        wasmJsMain.dependencies {
+            implementation(libs.wrappers.browser)
+        }
     }
 }
 

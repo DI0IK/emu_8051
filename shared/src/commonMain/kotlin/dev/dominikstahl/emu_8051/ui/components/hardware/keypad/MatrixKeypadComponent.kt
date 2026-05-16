@@ -40,7 +40,7 @@ class MatrixKeypadComponent(config: HwComponentConfig) : HwComponent(config) {
     override fun onUserInput(input: HwUserInput, portCtrl: PortController) {
         if (input is HwUserInput.KeyInput && input.compId == config.id) {
             val col = input.col
-            val count = columnRefCount.getOrDefault(col, 0)
+            val count = columnRefCount[col] ?: 0
             if (input.pressed) {
                 columnRefCount[col] = count + 1
                 if (count == 0) {
@@ -48,7 +48,7 @@ class MatrixKeypadComponent(config: HwComponentConfig) : HwComponent(config) {
                 }
             } else {
                 val newCount = count - 1
-                if (newCount <= 0) {
+                if (newCount < 1) {
                     columnRefCount.remove(col)
                     portCtrl.release(config.port, 1 shl col)
                 } else {
