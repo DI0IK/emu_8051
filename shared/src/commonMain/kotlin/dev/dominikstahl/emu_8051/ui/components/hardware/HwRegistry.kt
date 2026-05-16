@@ -65,9 +65,9 @@ object HwRegistry {
 
     fun get(typeId: String): HwComponentFactory? = factories[typeId]
 
-    fun allFactories(): Collection<HwComponentFactory> = factories.values
+    fun allFactories(): List<HwComponentFactory> = factories.values.toList()
 
-    fun allTypeIds(): Set<String> = factories.keys
+    fun allTypeIds(): List<String> = factories.keys.toList()
 }
 
 fun registerBuiltinHardwareComponents() {

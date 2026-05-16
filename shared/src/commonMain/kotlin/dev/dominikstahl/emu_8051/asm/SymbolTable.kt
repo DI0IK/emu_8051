@@ -25,9 +25,9 @@ class SymbolTable {
         var changed = true
         while (changed) {
             changed = false
-            val entries = deferred.entries.toList()
-            for ((name, expr) in entries) {
-                if (name !in deferred) continue
+            val keys = deferred.keys.toList()
+            for (name in keys) {
+                val expr = deferred[name] ?: continue
                 try {
                     val v = evalExpr(expr, this, pc)
                     values[name] = v

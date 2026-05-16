@@ -214,7 +214,7 @@ class EmulatorViewModel(
         viewModelScope.launch(Dispatchers.Default) {
             mutex.withLock {
                 cpuState.reset()
-                components.values.forEach { it.reset() }
+                components.values.toList().forEach { it.reset() }
                 _uiState.value = snapshotState()
             }
         }
@@ -254,7 +254,7 @@ class EmulatorViewModel(
                         cpuState.rom[i] = rom[i]
                     }
                     cpuState.reset()
-                    components.values.forEach { it.reset() }
+                    components.values.toList().forEach { it.reset() }
                     _uiState.value = snapshotState().copy(
                         assemblyErrors = emptyList(),
                         isProgramLoaded = true,
