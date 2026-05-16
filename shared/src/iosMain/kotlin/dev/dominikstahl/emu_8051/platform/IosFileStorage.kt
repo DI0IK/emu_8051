@@ -1,12 +1,21 @@
 package dev.dominikstahl.emu_8051.platform
 
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.cstr
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.toKString
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSSearchPathForDirectoriesInDomains
-import platform.Foundation.NSString
-import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUserDomainMask
+import platform.posix.fclose
+import platform.posix.fgets
+import platform.posix.fopen
+import platform.posix.fputs
 
+@OptIn(ExperimentalForeignApi::class)
 class IosFileStorage : FileStorage {
     private val storageDir: String by lazy {
         val paths = NSSearchPathForDirectoriesInDomains(
@@ -23,7 +32,13 @@ class IosFileStorage : FileStorage {
     override suspend fun save(name: String, content: String): Boolean {
         return try {
             val path = "$storageDir/$name"
-            (content as NSString).writeToFile(path, true, NSUTF8StringEncoding, null)
+            memScoped {
+                val file = fopen(path.cstr.ptr, "w".cstr.ptr)
+                    ?: return@memScoped false
+                fputs(content.cstr.ptr, file)
+                fclose(file)
+                true
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             false
@@ -33,7 +48,18 @@ class IosFileStorage : FileStorage {
     override suspend fun load(name: String): String? {
         return try {
             val path = "$storageDir/$name"
-            NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
+            memScoped {
+                val file = fopen(path.cstr.ptr, "r".cstr.ptr)
+                    ?: return@memScoped null
+                val buffer = allocArray<ByteVar>(4096)
+                val sb = StringBuilder()
+                while (true) {
+                    val line = fgets(buffer, 4096, file) ?: break
+                    sb.append(buffer.toKString())
+                }
+                fclose(file)
+                sb.toString()
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             null
