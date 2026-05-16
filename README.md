@@ -1,48 +1,81 @@
-This is a Kotlin Multiplatform project targeting Android, iOS, Web, Desktop (JVM).
+# emu_8051
 
-* [/iosApp](./iosApp/iosApp) contains an iOS application. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+A Kotlin Multiplatform 8051 microcontroller emulator with a Compose Multiplatform UI. Targets Android, Desktop (JVM), Web (JS/Wasm), and iOS.
 
-* [/shared](./shared/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-    - [commonMain](./shared/src/commonMain/kotlin) is for code that’s common for all targets.
-    - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-      For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-      the [iosMain](./shared/src/iosMain/kotlin) folder would be the right place for such calls.
-      Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./shared/src/jvmMain/kotlin)
-      folder is the appropriate location.
+## Features
 
-### Running the apps
+- **Full 8051 ISA** — all 256 opcodes implemented, including timers 0/1/2, interrupts, and bit-addressing
+- **Built-in assembler** — Intel ASM51 syntax with two-pass assembly, expression evaluation, and predefined SFR/bit symbols
+- **Hardware peripherals** — attach HD44780 LCD, 7-segment display, LED bars, matrix keypad, and toggle switches to port pins
+- **Debugging** — single-step, breakpoints, register/memory viewers, source-level PC tracking
+- **Speed control** — manual step, custom IPS target, and unlimited mode
+- **Cross-platform** — desktop app via JVM, web via Wasm/JS, native mobile via Android/iOS
 
-Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and
-options:
+## Running
 
-- Android app: `./gradlew :androidApp:assembleDebug`
-- Desktop app:
-    - Hot reload: `./gradlew :desktopApp:hotRun --auto`
-    - Standard run: `./gradlew :desktopApp:run`
-- Web app:
-    - Wasm target (faster, modern browsers): `./gradlew :webApp:wasmJsBrowserDevelopmentRun`
-    - JS target (slower, supports older browsers): `./gradlew :webApp:jsBrowserDevelopmentRun`
-- iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+```sh
+# Desktop (JVM)
+./gradlew :desktopApp:run
 
-### Running tests
+# Desktop with hot reload
+./gradlew :desktopApp:hotRun --auto
 
-Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
+# Web (Wasm — faster, modern browsers)
+./gradlew :webApp:wasmJsBrowserDevelopmentRun
 
-- Android tests: `./gradlew :shared:testAndroidHostTest`
-- Desktop tests: `./gradlew :shared:jvmTest`
-- Web tests:
-    - Wasm target: `./gradlew :shared:wasmJsTest`
-    - JS target: `./gradlew :shared:jsTest`
-- iOS tests: `./gradlew :shared:iosSimulatorArm64Test`
+# Web (JS — legacy browser support)
+./gradlew :webApp:jsBrowserDevelopmentRun
 
----
+# Android
+./gradlew :androidApp:assembleDebug
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html),
-[Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform/#compose-multiplatform),
-[Kotlin/Wasm](https://kotl.in/wasm/)…
+# iOS
+# Open iosApp/ in Xcode and run from there
+```
 
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack
-channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+## Tests
+
+```sh
+# Desktop
+./gradlew :shared:jvmTest
+
+# Web (Wasm)
+./gradlew :shared:wasmJsTest
+
+# Web (JS)
+./gradlew :shared:jsTest
+
+# Android
+./gradlew :shared:testAndroidHostTest
+
+# iOS
+./gradlew :shared:iosSimulatorArm64Test
+```
+
+## Architecture
+
+```
+shared/src/commonMain/kotlin/
+  asm/          — ASM51 assembler (tokenizer, parser, two-pass encoder)
+  engine/       — core emulator
+    ArithmeticOps.kt, BitOps.kt, DataMovementOps.kt, ...
+    CpuState.kt, Interpreter.kt, Instruction.kt
+    InterruptController.kt, TimerController.kt
+  ui/           — Compose Multiplatform UI
+    components/ — screen panels (source editor, register view, memory viewer, control bar)
+    hardware/   — peripheral components (LCD, LED, 7-seg, keypad, toggle)
+    EmulatorViewModel.kt, EmulatorUiState.kt
+  App.kt        — shared Compose entry point
+
+Platform modules:
+  androidApp/   — Android MainActivity
+  desktopApp/   — JVM Compose Window
+  webApp/       — JS/Wasm entry point
+  iosApp/       — SwiftUI wrapper
+```
+
+## Tech Stack
+
+- Kotlin 2.3.21, Gradle 9.1.0
+- Compose Multiplatform 1.11.0
+- Kotlin Multiplatform targeting JVM, Android, JS, Wasm, iOS
