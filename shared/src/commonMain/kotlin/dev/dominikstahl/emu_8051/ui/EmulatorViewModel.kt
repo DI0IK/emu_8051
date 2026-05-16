@@ -130,28 +130,28 @@ class EmulatorViewModel(
             var ipsWindowStart = timeSource.markNow()
             var ipsWindowCycles = 0L
             var smoothedActualIps = 0L
+            var lastLoopMark = timeSource.markNow()
 
             while (isActive) {
-                val frameMark = timeSource.markNow()
-                yield()
-
-                val frameDurationMicros = frameMark.elapsedNow().inWholeMicroseconds
-                var breakpointHit = false
                 val currentMode = _uiState.value.speedMode
                 val currentTargetIps = _uiState.value.targetIps.toDouble()
+
+                val elapsedMicros = lastLoopMark.elapsedNow().inWholeMicroseconds
+                lastLoopMark = timeSource.markNow()
 
                 val cyclesToRun = if (currentMode == SpeedMode.UNLIMITED) {
                     200_000
                 } else {
-                    (currentTargetIps * frameDurationMicros / 1_000_000.0).toInt().coerceIn(0, 200_000)
+                    (currentTargetIps * elapsedMicros / 1_000_000.0).toInt().coerceIn(1, 200_000)
                 }
 
                 var cyclesThisFrame = 0
+                var breakpointHit = false
                 mutex.withLock {
                     if (cyclesToRun > 0) {
                         val breakpoints = _uiState.value.breakpoints
                         val hasBreakpoints = breakpoints.isNotEmpty()
-                        for (i in 0 until cyclesToRun) {
+                        while (cyclesThisFrame < cyclesToRun && !breakpointHit) {
                             if (hasBreakpoints && !skipFirstBreakpointCheck) {
                                 val currentLine = pcToLineMap[cpuState.pc]
                                 if (currentLine != null && currentLine in breakpoints) {
@@ -166,7 +166,7 @@ class EmulatorViewModel(
                         }
                     }
                     captureSnapshots()
-                    val isSlow = currentMode != SpeedMode.UNLIMITED && frameDurationMicros > 25_000
+                    val isSlow = currentMode != SpeedMode.UNLIMITED && elapsedMicros > 25_000
                     _uiState.value = if (breakpointHit) {
                         snapshotState().copy(isRunning = false)
                     } else {
@@ -182,9 +182,22 @@ class EmulatorViewModel(
 
                 val windowElapsed = ipsWindowStart.elapsedNow().inWholeMicroseconds
                 if (windowElapsed >= 500_000) {
-                    smoothedActualIps = (ipsWindowCycles * 1_000_000L) / 500_000
+                    smoothedActualIps = (ipsWindowCycles * 1_000_000L) / windowElapsed
                     ipsWindowCycles = 0L
                     ipsWindowStart = timeSource.markNow()
+                }
+
+                if (currentMode == SpeedMode.UNLIMITED) {
+                    yield()
+                } else {
+                    val targetBatchTimeMicros = (cyclesThisFrame * 1_000_000.0) / currentTargetIps
+                    val actualBatchTimeMicros = lastLoopMark.elapsedNow().inWholeMicroseconds
+                    val remainingDelayMicros = targetBatchTimeMicros - actualBatchTimeMicros
+                    if (remainingDelayMicros > 1000) {
+                        delay((remainingDelayMicros / 1000).toLong())
+                    } else {
+                        yield()
+                    }
                 }
             }
         }
