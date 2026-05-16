@@ -24,7 +24,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.yield
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 
 @OptIn(ExperimentalUnsignedTypes::class)
@@ -127,8 +126,6 @@ class EmulatorViewModel(
 
         runJob = viewModelScope.launch(Dispatchers.Default) {
             val timeSource = TimeSource.Monotonic
-            val targetFrameDuration = (1000.0 / 60).milliseconds
-            var cycleAccumulator = 0.0
             var skipFirstBreakpointCheck = true
             var ipsWindowStart = timeSource.markNow()
             var ipsWindowCycles = 0L
@@ -136,6 +133,9 @@ class EmulatorViewModel(
 
             while (isActive) {
                 val frameMark = timeSource.markNow()
+                yield()
+
+                val frameDurationMicros = frameMark.elapsedNow().inWholeMicroseconds
                 var breakpointHit = false
                 val currentMode = _uiState.value.speedMode
                 val currentTargetIps = _uiState.value.targetIps.toDouble()
@@ -143,10 +143,7 @@ class EmulatorViewModel(
                 val cyclesToRun = if (currentMode == SpeedMode.UNLIMITED) {
                     200_000
                 } else {
-                    val count = (currentTargetIps / 60.0) + cycleAccumulator
-                    val integerCycles = count.toInt()
-                    cycleAccumulator = count - integerCycles
-                    integerCycles
+                    (currentTargetIps * frameDurationMicros / 1_000_000.0).toInt().coerceIn(0, 200_000)
                 }
 
                 var cyclesThisFrame = 0
@@ -169,10 +166,11 @@ class EmulatorViewModel(
                         }
                     }
                     captureSnapshots()
+                    val isSlow = currentMode != SpeedMode.UNLIMITED && frameDurationMicros > 25_000
                     _uiState.value = if (breakpointHit) {
                         snapshotState().copy(isRunning = false)
                     } else {
-                        snapshotState(isSlow = false, actualIps = smoothedActualIps)
+                        snapshotState(isSlow = isSlow, actualIps = smoothedActualIps)
                     }
                 }
 
@@ -180,20 +178,6 @@ class EmulatorViewModel(
 
                 if (breakpointHit) {
                     break
-                }
-
-                if (currentMode == SpeedMode.UNLIMITED) {
-                    yield()
-                } else {
-                    val elapsed = frameMark.elapsedNow()
-                    val sleepTime = targetFrameDuration - elapsed
-                    if (!sleepTime.isPositive()) {
-                        _uiState.value = _uiState.value.copy(isSlow = true)
-                        yield()
-                    } else {
-                        _uiState.value = _uiState.value.copy(isSlow = false)
-                        delay(sleepTime)
-                    }
                 }
 
                 val windowElapsed = ipsWindowStart.elapsedNow().inWholeMicroseconds
