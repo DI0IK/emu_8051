@@ -1,0 +1,150 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name != 'push' }}
+      - run: ./gradlew :shared:jvmTest :shared:wasmJsTest
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results
+          path: shared/build/reports/
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name != 'push' }}
+      - name: Decode keystore
+        id: decode
+        env:
+          KEYSTORE_B64: ${{ secrets.CI_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "${KEYSTORE_B64}" ]; then
+            echo "${KEYSTORE_B64}" | base64 -d > keystore.jks
+            echo "HAS_KEYSTORE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "HAS_KEYSTORE=false" >> "$GITHUB_OUTPUT"
+          fi
+        working-directory: androidApp
+      - name: Build release APK
+        run: ./gradlew :androidApp:assembleRelease
+        env:
+          CI_KEYSTORE_PATH: ${{ steps.decode.outputs.HAS_KEYSTORE == 'true' && 'keystore.jks' || '' }}
+          CI_KEYSTORE_PASSWORD: ${{ secrets.CI_KEYSTORE_PASSWORD }}
+          CI_KEY_ALIAS: ${{ secrets.CI_KEY_ALIAS }}
+          CI_KEY_PASSWORD: ${{ secrets.CI_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: androidApp/build/outputs/apk/release/*.apk
+
+  desktop-linux:
+    name: Desktop Linux
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name != 'push' }}
+      - run: ./gradlew :desktopApp:packageDeb :desktopApp:createDistributable
+      - name: Package portable tar.gz
+        run: tar czf desktop-linux.tar.gz -C desktopApp/build/compose/binaries/main app/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: |
+            desktop-linux.tar.gz
+            desktopApp/build/compose/binaries/main/*/*.deb
+
+  desktop-windows:
+    name: Desktop Windows
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name != 'push' }}
+      - run: ./gradlew :desktopApp:packageMsi :desktopApp:createDistributable
+      - name: Package portable zip
+        shell: bash
+        run: 7z a desktop-windows.zip desktopApp/build/compose/binaries/main/app/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: |
+            desktop-windows.zip
+            desktopApp/build/compose/binaries/main/*/*.msi
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name != 'push' }}
+      - run: ./gradlew :webApp:wasmJsBrowserDistribution :webApp:jsBrowserDistribution
+      - uses: peaceiris/actions-gh-pages@v4
+        if: github.event_name != 'pull_request'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: webApp/build/dist/wasmJs/productionExecutable
+          force_orphan: true
+          user_name: github-actions[bot]
+          user_email: 41898282+github-actions[bot]@users.noreply.github.com
