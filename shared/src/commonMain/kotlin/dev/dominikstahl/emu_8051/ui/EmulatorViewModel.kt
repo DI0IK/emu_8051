@@ -104,9 +104,9 @@ class EmulatorViewModel(
             mutex.withLock {
                 interpreter.step()
                 tickComponents()
+                captureSnapshots()
+                _uiState.value = snapshotState()
             }
-            captureSnapshots()
-            _uiState.value = snapshotState()
         }
     }
 
@@ -150,8 +150,8 @@ class EmulatorViewModel(
                 }
 
                 var cyclesThisFrame = 0
-                if (cyclesToRun > 0) {
-                    mutex.withLock {
+                mutex.withLock {
+                    if (cyclesToRun > 0) {
                         val breakpoints = _uiState.value.breakpoints
                         for (i in 0 until cyclesToRun) {
                             val currentLine = pcToLineMap[cpuState.pc]
@@ -165,14 +165,17 @@ class EmulatorViewModel(
                             tickComponents()
                         }
                     }
+                    captureSnapshots()
+                    _uiState.value = if (breakpointHit) {
+                        snapshotState().copy(isRunning = false)
+                    } else {
+                        snapshotState(isSlow = false, actualIps = smoothedActualIps)
+                    }
                 }
 
                 ipsWindowCycles += cyclesThisFrame
-                captureSnapshots()
-                _uiState.value = snapshotState(isSlow = false, actualIps = smoothedActualIps)
 
                 if (breakpointHit) {
-                    _uiState.value = snapshotState().copy(isRunning = false)
                     break
                 }
 
@@ -212,8 +215,8 @@ class EmulatorViewModel(
             mutex.withLock {
                 cpuState.reset()
                 components.values.forEach { it.reset() }
+                _uiState.value = snapshotState()
             }
-            _uiState.value = snapshotState()
         }
     }
 
@@ -252,11 +255,12 @@ class EmulatorViewModel(
                     }
                     cpuState.reset()
                     components.values.forEach { it.reset() }
+                    _uiState.value = snapshotState().copy(
+                        assemblyErrors = emptyList(),
+                        isProgramLoaded = true,
+                        assemblyVersion = _uiState.value.assemblyVersion + 1,
+                    )
                 }
-                _uiState.value = snapshotState().copy(
-                    assemblyErrors = emptyList(),
-                    isProgramLoaded = true,
-                )
                 pcToLineMap = result.sourceMap.entries.associate { it.value to it.key }
             } else {
                 _uiState.value = _uiState.value.copy(
@@ -332,9 +336,9 @@ class EmulatorViewModel(
                         components[input.compId]?.onUserInput(input, portController)
                     }
                 }
+                captureSnapshots()
+                _uiState.value = snapshotState()
             }
-            captureSnapshots()
-            _uiState.value = snapshotState()
         }
     }
 
@@ -362,23 +366,31 @@ class EmulatorViewModel(
     }
 
     fun removeHwComponent(id: String) {
-        components.remove(id)
+        viewModelScope.launch(Dispatchers.Default) {
+            mutex.withLock {
+                components.remove(id)
+            }
+        }
         _uiState.value = _uiState.value.copy(
             hwConfig = _uiState.value.hwConfig.filter { it.id != id }
         )
     }
 
     fun updateHwComponent(id: String, transform: (HwComponentConfig) -> HwComponentConfig) {
-        components.remove(id)
-        _uiState.value = _uiState.value.copy(
-            hwConfig = _uiState.value.hwConfig.map {
-                if (it.id == id) {
-                    val updated = transform(it)
-                    val factory = HwRegistry.get(updated.type)
-                    if (factory != null) updated.copy(label = factory.labelFor(updated)) else updated
-                } else it
+        viewModelScope.launch(Dispatchers.Default) {
+            mutex.withLock {
+                components.remove(id)
+                _uiState.value = _uiState.value.copy(
+                    hwConfig = _uiState.value.hwConfig.map {
+                        if (it.id == id) {
+                            val updated = transform(it)
+                            val factory = HwRegistry.get(updated.type)
+                            if (factory != null) updated.copy(label = factory.labelFor(updated)) else updated
+                        } else it
+                    }
+                )
             }
-        )
+        }
     }
 
     fun saveSource(name: String) {

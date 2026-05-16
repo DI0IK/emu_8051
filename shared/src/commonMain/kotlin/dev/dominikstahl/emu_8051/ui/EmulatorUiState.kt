@@ -65,4 +65,5 @@ data class EmulatorUiState(
     val scon: Int = 0,
     val sbuf: Int = 0,
     val pcon: Int = 0,
+    val assemblyVersion: Int = 0,
 )

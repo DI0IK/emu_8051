@@ -164,7 +164,7 @@ private fun ColumnScope.DesktopLayout(
             getRom = { viewModel.getRomForDisplay() },
             getRam = { viewModel.getRamForDisplay() },
             getSfr = { viewModel.getSfrForDisplay() },
-            stateKey = uiState.totalCycles,
+            stateKey = Pair(uiState.assemblyVersion, uiState.totalCycles),
             onWidthCalculated = { optimalWidth = it },
             overrideBytesPerLine = 8,
             modifier = Modifier.width(optimalWidth).fillMaxHeight(),
@@ -234,7 +234,7 @@ private fun ColumnScope.MobileLayout(
                         getRom = { viewModel.getRomForDisplay() },
                         getRam = { viewModel.getRamForDisplay() },
                         getSfr = { viewModel.getSfrForDisplay() },
-                        stateKey = uiState.totalCycles,
+                        stateKey = Pair(uiState.assemblyVersion, uiState.totalCycles),
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
