@@ -15,13 +15,13 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.HwUserInput
 data class UartSnapshot(val txBuffer: String) : ComponentSnapshot()
 
 class UartTerminalComponent(config: HwComponentConfig) : HwComponent(config) {
-    private val txBuffer = StringBuilder()
+    private var txBuffer = StringBuilder()
     private val maxChars = 4096
 
     fun appendTx(byte: UByte) {
         txBuffer.append(byte.toInt().toChar())
         if (txBuffer.length > maxChars) {
-            txBuffer.delete(0, txBuffer.length - maxChars)
+            txBuffer = StringBuilder(txBuffer.substring(txBuffer.length - maxChars))
         }
     }
 
