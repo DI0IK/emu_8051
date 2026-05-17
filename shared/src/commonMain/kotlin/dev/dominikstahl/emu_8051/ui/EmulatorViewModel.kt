@@ -152,8 +152,8 @@ fun run(mode: SpeedMode) {
                             }
                         }
                         skipFirstBreakpointCheck = false
-                        interpreter.step()
-                        cyclesThisFrame++
+
+                        cyclesThisFrame += interpreter.step()
                         tickComponents()
                     }
                     captureSnapshots()
@@ -211,8 +211,8 @@ fun run(mode: SpeedMode) {
                             }
                         }
                         skipFirstBreakpointCheck = false
-                        interpreter.step()
-                        cyclesThisFrame++
+
+                        cyclesThisFrame += interpreter.step()
                         tickComponents()
                     }
                 }
