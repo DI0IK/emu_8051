@@ -109,76 +109,63 @@ class EmulatorViewModel(
         }
     }
 
-    fun run(mode: SpeedMode) {
-        runJob?.cancel()
-        if (mode == SpeedMode.MANUAL) {
-            _uiState.value = _uiState.value.copy(isRunning = false, speedMode = mode)
-            return
-        }
+// TODO: Format
+fun run(mode: SpeedMode) {
+    runJob?.cancel()
+    if (mode == SpeedMode.MANUAL) {
+        _uiState.value = _uiState.value.copy(isRunning = false, speedMode = mode)
+        return
+    }
 
-        val targetIps = when(mode) {
-            SpeedMode.UNLIMITED -> -1.0
-            SpeedMode.CUSTOM -> _uiState.value.targetIps.toDouble()
-            else -> 0.0
-        }
+    _uiState.value = _uiState.value.copy(isRunning = true, speedMode = mode)
 
-        _uiState.value = _uiState.value.copy(isRunning = true, speedMode = mode)
+    runJob = viewModelScope.launch(Dispatchers.Default) {
+        val timeSource = TimeSource.Monotonic
+        var skipFirstBreakpointCheck = true
+        var ipsWindowStart = timeSource.markNow()
+        var ipsWindowCycles = 0L
+        var smoothedActualIps = 0L
+        
+        val frameDurationMs = 20L
+        var lastFrameMark = timeSource.markNow()
 
-        runJob = viewModelScope.launch(Dispatchers.Default) {
-            val timeSource = TimeSource.Monotonic
-            var skipFirstBreakpointCheck = true
-            var ipsWindowStart = timeSource.markNow()
-            var ipsWindowCycles = 0L
-            var smoothedActualIps = 0L
-            var lastLoopMark = timeSource.markNow()
+        while (isActive) {
+            val currentMode = _uiState.value.speedMode
+            val currentTargetIps = _uiState.value.targetIps.toDouble()
 
-            while (isActive) {
-                val currentMode = _uiState.value.speedMode
-                val currentTargetIps = _uiState.value.targetIps.toDouble()
-
-                val elapsedMicros = lastLoopMark.elapsedNow().inWholeMicroseconds
-                lastLoopMark = timeSource.markNow()
-
-                val cyclesToRun = if (currentMode == SpeedMode.UNLIMITED) {
-                    200_000
-                } else {
-                    (currentTargetIps * elapsedMicros / 1_000_000.0).toInt().coerceIn(1, 200_000)
-                }
-
+            // --- 1. UNLIMITED SPEED MODE ---
+            if (currentMode == SpeedMode.UNLIMITED) {
                 var cyclesThisFrame = 0
                 var breakpointHit = false
+                
                 mutex.withLock {
-                    if (cyclesToRun > 0) {
-                        val breakpoints = _uiState.value.breakpoints
-                        val hasBreakpoints = breakpoints.isNotEmpty()
-                        while (cyclesThisFrame < cyclesToRun && !breakpointHit) {
-                            if (hasBreakpoints && !skipFirstBreakpointCheck) {
-                                val currentLine = pcToLineMap[cpuState.pc]
-                                if (currentLine != null && currentLine in breakpoints) {
-                                    breakpointHit = true
-                                    break
-                                }
+                    val breakpoints = _uiState.value.breakpoints
+                    val hasBreakpoints = breakpoints.isNotEmpty()
+                    
+                    // Keep chunk sizes sane (50k) so the UI thread can still acquire the mutex lock
+                    while (cyclesThisFrame < 50_000 && !breakpointHit) {
+                        if (hasBreakpoints && !skipFirstBreakpointCheck) {
+                            val currentLine = pcToLineMap[cpuState.pc]
+                            if (currentLine != null && currentLine in breakpoints) {
+                                breakpointHit = true
+                                break
                             }
-                            skipFirstBreakpointCheck = false
-                            interpreter.step()
-                            cyclesThisFrame++
-                            tickComponents()
                         }
+                        skipFirstBreakpointCheck = false
+                        interpreter.step()
+                        cyclesThisFrame++
+                        tickComponents()
                     }
                     captureSnapshots()
-                    val isSlow = currentMode != SpeedMode.UNLIMITED && elapsedMicros > 25_000
                     _uiState.value = if (breakpointHit) {
                         snapshotState().copy(isRunning = false)
                     } else {
-                        snapshotState(isSlow = isSlow, actualIps = smoothedActualIps)
+                        snapshotState(isSlow = false, actualIps = smoothedActualIps)
                     }
                 }
 
                 ipsWindowCycles += cyclesThisFrame
-
-                if (breakpointHit) {
-                    break
-                }
+                if (breakpointHit) break
 
                 val windowElapsed = ipsWindowStart.elapsedNow().inWholeMicroseconds
                 if (windowElapsed >= 500_000) {
@@ -187,22 +174,85 @@ class EmulatorViewModel(
                     ipsWindowStart = timeSource.markNow()
                 }
 
-                if (currentMode == SpeedMode.UNLIMITED) {
-                    yield()
-                } else {
-                    val targetBatchTimeMicros = (cyclesThisFrame * 1_000_000.0) / currentTargetIps
-                    val actualBatchTimeMicros = lastLoopMark.elapsedNow().inWholeMicroseconds
-                    val remainingDelayMicros = targetBatchTimeMicros - actualBatchTimeMicros
-                    if (remainingDelayMicros > 1000) {
-                        delay((remainingDelayMicros / 1000).toLong())
-                    } else {
-                        yield()
+                yield()
+                continue
+            }
+
+            // --- 2. THROTTLED MODE (SpeedMode.CUSTOM) ---
+            val elapsedMs = lastFrameMark.elapsedNow().inWholeMilliseconds
+            
+            if (elapsedMs < frameDurationMs) {
+                delay(frameDurationMs - elapsedMs)
+                continue
+            }
+            
+            // Limit the maximum elapsed time used for cycle calculations.
+            // Even if the system stuttered for 500ms, we only calculate cycles for a max of 2 frames (40ms).
+            val effectiveElapsedMs = elapsedMs.coerceAtMost(frameDurationMs * 2)
+            lastFrameMark = timeSource.markNow()
+
+            // Lower upper-bound cap to 100k cycles. At 1M IPS, a 20ms frame is 20k cycles.
+            val cyclesToRun = ((currentTargetIps * effectiveElapsedMs) / 1000.0).toInt().coerceIn(1, 100_000)
+
+            var cyclesThisFrame = 0
+            var breakpointHit = false
+            val executionStart = timeSource.markNow()
+
+            mutex.withLock {
+                if (cyclesToRun > 0) {
+                    val breakpoints = _uiState.value.breakpoints
+                    val hasBreakpoints = breakpoints.isNotEmpty()
+                    while (cyclesThisFrame < cyclesToRun && !breakpointHit) {
+                        if (hasBreakpoints && !skipFirstBreakpointCheck) {
+                            val currentLine = pcToLineMap[cpuState.pc]
+                            if (currentLine != null && currentLine in breakpoints) {
+                                breakpointHit = true
+                                break
+                            }
+                        }
+                        skipFirstBreakpointCheck = false
+                        interpreter.step()
+                        cyclesThisFrame++
+                        tickComponents()
                     }
                 }
+                captureSnapshots()
+                
+                val executionTimeMs = executionStart.elapsedNow().inWholeMilliseconds
+                val isSlow = executionTimeMs > frameDurationMs
+
+                _uiState.value = if (breakpointHit) {
+                    snapshotState().copy(isRunning = false)
+                } else {
+                    snapshotState(isSlow = isSlow, actualIps = smoothedActualIps)
+                }
+            }
+
+            ipsWindowCycles += cyclesThisFrame
+            if (breakpointHit) break
+
+            // Update IPS metrics window
+            val windowElapsed = ipsWindowStart.elapsedNow().inWholeMicroseconds
+            if (windowElapsed >= 500_000) {
+                smoothedActualIps = (ipsWindowCycles * 1_000_000L) / windowElapsed
+                ipsWindowCycles = 0L
+                ipsWindowStart = timeSource.markNow()
+            }
+
+            val totalFrameTimeMs = executionStart.elapsedNow().inWholeMilliseconds
+            if (totalFrameTimeMs < frameDurationMs) {
+                // Host is running fast enough. Sleep away the leftover frame time budget.
+                delay(frameDurationMs - totalFrameTimeMs)
+            } else {
+                // CRITICAL SAFETY VALVE: The host is too slow.
+                // We wipe out the time debt by resetting the timeline mark to right NOW.
+                lastFrameMark = timeSource.markNow()
+                yield()
             }
         }
     }
-
+}
+    
     fun pause() {
         runJob?.cancel()
         runJob = null
