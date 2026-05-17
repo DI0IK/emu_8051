@@ -28,15 +28,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
+import dev.dominikstahl.emu_8051.ui.CustomIcons
 import dev.dominikstahl.emu_8051.ui.SpeedMode
 
 private fun ipsLabel(ips: Int): String = when (ips) {
@@ -119,13 +115,13 @@ fun ControlBar(
                     horizontalArrangement = Arrangement.End,
                 ) {
                     IconButton(onClick = onSave) {
-                        Icon(Icons.Default.Save, contentDescription = "Save")
+                        Icon(CustomIcons.Save, contentDescription = "Save")
                     }
                     IconButton(onClick = onLoad) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "Load")
+                        Icon(CustomIcons.FolderOpen, contentDescription = "Load")
                     }
                     IconButton(onClick = onCopy) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                        Icon(CustomIcons.ContentCopy, contentDescription = "Copy")
                     }
                     if (onShare != null) {
                         IconButton(onClick = onShare) {
@@ -154,13 +150,13 @@ fun ControlBar(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     IconButton(onClick = onSave) {
-                        Icon(Icons.Default.Save, contentDescription = "Save")
+                        Icon(CustomIcons.Save, contentDescription = "Save")
                     }
                     IconButton(onClick = onLoad) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "Load")
+                        Icon(CustomIcons.FolderOpen, contentDescription = "Load")
                     }
                     IconButton(onClick = onCopy) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                        Icon(CustomIcons.ContentCopy, contentDescription = "Copy")
                     }
                     if (onShare != null) {
                         IconButton(onClick = onShare) {
@@ -233,11 +229,11 @@ private fun ActionButtons(
             Icon(Icons.Default.Refresh, contentDescription = "Reset")
         }
         IconButton(onClick = onStep, enabled = !isRunning) {
-            Icon(Icons.Default.SkipNext, contentDescription = "Step")
+            Icon(CustomIcons.SkipNext, contentDescription = "Step")
         }
         if (isRunning) {
             IconButton(onClick = onPause) {
-                Icon(Icons.Default.Pause, contentDescription = "Pause")
+                Icon(CustomIcons.Pause, contentDescription = "Pause")
             }
         } else {
             IconButton(

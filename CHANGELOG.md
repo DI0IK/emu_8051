@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.1 — 2026-05-17
+
+### Fixed
+
+- **CI build time regression** — replaced `compose-materialIconsExtended` (37 MB) with `material-icons-core` + custom SVG icon definitions, reducing JS/WasmJS distribution builds from >30 min to ~1 min
+
 ## v1.0.0 — 2026-05-17
 
 Initial release of emu_8051, a Kotlin Multiplatform 8051 microcontroller emulator
