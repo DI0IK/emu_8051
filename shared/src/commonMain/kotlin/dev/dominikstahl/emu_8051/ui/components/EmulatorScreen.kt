@@ -76,11 +76,19 @@ fun EmulatorScreen() {
                         viewModel.refreshSavedFiles()
                         showLoadDialog = true
                     },
-                    onCopy = {
-                        viewModel.copySource()
-                        scope.launch { snackbarHostState.showSnackbar("Copied!") }
+                    onPaste = {
+                        scope.launch {
+                            if (viewModel.pasteSource()) {
+                                snackbarHostState.showSnackbar("Pasted!")
+                            }
+                        }
                     },
-                    onShare = if (hasPlatformShare) viewModel::shareSource else null,
+                    onShare = {
+                        viewModel.shareSource()
+                        if (!hasPlatformShare) {
+                            scope.launch { snackbarHostState.showSnackbar("Copied!") }
+                        }
+                    },
                     onSetTargetIps = { viewModel.setTargetIps(it) },
                     onSetSpeed = { viewModel.setSpeed(it) },
                     isSlow = uiState.isSlow,

@@ -63,8 +63,8 @@ fun ControlBar(
     onReset: () -> Unit,
     onSave: () -> Unit,
     onLoad: () -> Unit,
-    onCopy: () -> Unit,
-    onShare: (() -> Unit)? = null,
+    onPaste: () -> Unit,
+    onShare: () -> Unit,
     onSetTargetIps: (Int) -> Unit,
     onSetSpeed: (SpeedMode) -> Unit,
     isSlow: Boolean,
@@ -120,13 +120,11 @@ fun ControlBar(
                     IconButton(onClick = onLoad) {
                         Icon(CustomIcons.FolderOpen, contentDescription = "Load")
                     }
-                    IconButton(onClick = onCopy) {
-                        Icon(CustomIcons.ContentCopy, contentDescription = "Copy")
+                    IconButton(onClick = onPaste) {
+                        Icon(CustomIcons.ContentPaste, contentDescription = "Paste")
                     }
-                    if (onShare != null) {
-                        IconButton(onClick = onShare) {
-                            Icon(Icons.Default.Share, contentDescription = "Share")
-                        }
+                    IconButton(onClick = onShare) {
+                        Icon(Icons.Default.Share, contentDescription = "Share")
                     }
                 }
             }
@@ -155,13 +153,11 @@ fun ControlBar(
                     IconButton(onClick = onLoad) {
                         Icon(CustomIcons.FolderOpen, contentDescription = "Load")
                     }
-                    IconButton(onClick = onCopy) {
-                        Icon(CustomIcons.ContentCopy, contentDescription = "Copy")
+                    IconButton(onClick = onPaste) {
+                        Icon(CustomIcons.ContentPaste, contentDescription = "Paste")
                     }
-                    if (onShare != null) {
-                        IconButton(onClick = onShare) {
-                            Icon(Icons.Default.Share, contentDescription = "Share")
-                        }
+                    IconButton(onClick = onShare) {
+                        Icon(Icons.Default.Share, contentDescription = "Share")
                     }
                     SpeedSection(
                         speedMode = speedMode,

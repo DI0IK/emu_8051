@@ -10,6 +10,11 @@ actual fun copyToClipboard(text: String) {
     manager.setPrimaryClip(ClipData.newPlainText("emu_8051", text))
 }
 
+actual suspend fun pasteFromClipboard(): String? {
+    val manager = AndroidContext.appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    return manager.primaryClip?.getItemAt(0)?.text?.toString()
+}
+
 actual fun platformShare(text: String, title: String) {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"

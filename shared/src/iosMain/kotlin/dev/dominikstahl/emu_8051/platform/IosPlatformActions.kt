@@ -8,6 +8,10 @@ actual fun copyToClipboard(text: String) {
     UIPasteboard.generalPasteboard.string = text
 }
 
+actual suspend fun pasteFromClipboard(): String? {
+    return UIPasteboard.generalPasteboard.string
+}
+
 actual fun platformShare(text: String, title: String) {
     val activityVC = UIActivityViewController(
         activityItems = listOf(text),

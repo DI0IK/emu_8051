@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.1.0 — 2026-05-17
+
+### Added
+
+- **Paste from clipboard** — new Paste button reads clipboard content, parsing embedded metadata (hardware config header `; #emu_8051 <json>`) to restore both source code and peripheral configuration
+- **Share always visible** — Share button now appears on all platforms; falls back to copying to clipboard on desktop/web
+
+### Changed
+
+- **Copy button replaced with Paste** — `ContentCopy` icon swapped for `ContentPaste`
+- **Share fallback** — on platforms without native share sheet (JVM, JS, WasmJS), Share copies the encoded program to clipboard with a "Copied!" confirmation
+
+### Platform support
+
+- `pasteFromClipboard` implemented on all 5 targets: JVM (AWT), Android (ClipboardManager), iOS (UIPasteboard), JS (navigator.clipboard.readText), WasmJS (navigator.clipboard.readText)
+
 ## v1.0.1 — 2026-05-17
 
 ### Fixed

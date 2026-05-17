@@ -9,6 +9,8 @@ import dev.dominikstahl.emu_8051.platform.FileFormat
 import dev.dominikstahl.emu_8051.platform.FileStorage
 import dev.dominikstahl.emu_8051.platform.copyToClipboard
 import dev.dominikstahl.emu_8051.platform.createFileStorage
+import dev.dominikstahl.emu_8051.platform.hasPlatformShare
+import dev.dominikstahl.emu_8051.platform.pasteFromClipboard
 import dev.dominikstahl.emu_8051.platform.platformShare
 import dev.dominikstahl.emu_8051.engine.RI_BIT
 import dev.dominikstahl.emu_8051.engine.TI_BIT
@@ -504,13 +506,23 @@ class EmulatorViewModel(
         }
     }
 
-    fun copySource() {
-        val content = FileFormat.encode(_uiState.value.sourceCode, _uiState.value.hwConfig)
-        copyToClipboard(content)
+    suspend fun pasteSource(): Boolean {
+        val text = pasteFromClipboard() ?: return false
+        val (sourceCode, config) = FileFormat.decode(text)
+        if (config.isNotEmpty()) {
+            needsTickComponents = null
+            _uiState.value = _uiState.value.copy(hwConfig = config)
+        }
+        updateSource(sourceCode)
+        return true
     }
 
     fun shareSource() {
         val content = FileFormat.encode(_uiState.value.sourceCode, _uiState.value.hwConfig)
-        platformShare(content, "emu_8051 Program")
+        if (hasPlatformShare) {
+            platformShare(content, "emu_8051 Program")
+        } else {
+            copyToClipboard(content)
+        }
     }
 }
