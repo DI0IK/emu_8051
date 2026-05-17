@@ -1,6 +1,7 @@
 package dev.dominikstahl.emu_8051.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -24,12 +27,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.dominikstahl.emu_8051.platform.hasPlatformShare
 import dev.dominikstahl.emu_8051.ui.EmulatorViewModel
 import dev.dominikstahl.emu_8051.ui.SpeedMode
 import dev.dominikstahl.emu_8051.ui.components.hardware.HardwarePanel
+import kotlinx.coroutines.launch
 
 @Composable
 fun EmulatorScreen() {
@@ -37,54 +44,68 @@ fun EmulatorScreen() {
     val uiState by viewModel.uiState.collectAsState()
     var showSaveDialog by remember { mutableStateOf(false) }
     var showLoadDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { viewModel.refreshSavedFiles() }
 
-    // Use BoxWithConstraints to read the available screen width dynamically
-    BoxWithConstraints(
-        modifier = Modifier.fillMaxSize().padding(8.dp)
-    ) {
-        // Desktop needs at least 300dp (CPU) + 480dp (Memory) + room for Editor (~200dp+) = ~980dp
-        val isMobile = maxWidth < 980.dp
+    Box(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+        // Use BoxWithConstraints to read the available screen width dynamically
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Desktop needs at least 300dp (CPU) + 480dp (Memory) + room for Editor (~200dp+) = ~980dp
+            val isMobile = maxWidth < 980.dp
 
-        Column(modifier = Modifier.fillMaxSize()) {
-            // ControlBar stays globally accessible at the top on both Desktop and Mobile
-            ControlBar(
-                isRunning = uiState.isRunning,
-                speedMode = uiState.speedMode,
-                actualIps = uiState.actualIps,
-                targetIps = uiState.targetIps,
-                onStep = { viewModel.step() },
-                onRun = { viewModel.run(it) },
-                onPause = { viewModel.pause() },
-                onReset = { viewModel.reset() },
-                onSave = {
-                    viewModel.refreshSavedFiles()
-                    showSaveDialog = true
-                },
-                onLoad = {
-                    viewModel.refreshSavedFiles()
-                    showLoadDialog = true
-                },
-                onSetTargetIps = { viewModel.setTargetIps(it) },
-                onSetSpeed = { viewModel.setSpeed(it) },
-                isSlow = uiState.isSlow,
-                isMobile = isMobile,
-            )
-            Spacer(Modifier.height(6.dp))
+            Column(modifier = Modifier.fillMaxSize()) {
+                // ControlBar stays globally accessible at the top on both Desktop and Mobile
+                ControlBar(
+                    isRunning = uiState.isRunning,
+                    speedMode = uiState.speedMode,
+                    actualIps = uiState.actualIps,
+                    targetIps = uiState.targetIps,
+                    onStep = { viewModel.step() },
+                    onRun = { viewModel.run(it) },
+                    onPause = { viewModel.pause() },
+                    onReset = { viewModel.reset() },
+                    onSave = {
+                        viewModel.refreshSavedFiles()
+                        showSaveDialog = true
+                    },
+                    onLoad = {
+                        viewModel.refreshSavedFiles()
+                        showLoadDialog = true
+                    },
+                    onCopy = {
+                        viewModel.copySource()
+                        scope.launch { snackbarHostState.showSnackbar("Copied!") }
+                    },
+                    onShare = if (hasPlatformShare) viewModel::shareSource else null,
+                    onSetTargetIps = { viewModel.setTargetIps(it) },
+                    onSetSpeed = { viewModel.setSpeed(it) },
+                    isSlow = uiState.isSlow,
+                    isMobile = isMobile,
+                )
+                Spacer(Modifier.height(6.dp))
 
-            if (isMobile) {
-                MobileLayout(
-                    uiState = uiState,
-                    viewModel = viewModel,
-                )
-            } else {
-                DesktopLayout(
-                    uiState = uiState,
-                    viewModel = viewModel,
-                )
+                if (isMobile) {
+                    MobileLayout(
+                        uiState = uiState,
+                        viewModel = viewModel,
+                    )
+                } else {
+                    DesktopLayout(
+                        uiState = uiState,
+                        viewModel = viewModel,
+                    )
+                }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 
     if (showSaveDialog) {

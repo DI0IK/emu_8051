@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -25,6 +27,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material3.Icon
 import dev.dominikstahl.emu_8051.ui.SpeedMode
 
 private fun ipsLabel(ips: Int): String = when (ips) {
@@ -55,6 +67,8 @@ fun ControlBar(
     onReset: () -> Unit,
     onSave: () -> Unit,
     onLoad: () -> Unit,
+    onCopy: () -> Unit,
+    onShare: (() -> Unit)? = null,
     onSetTargetIps: (Int) -> Unit,
     onSetSpeed: (SpeedMode) -> Unit,
     isSlow: Boolean,
@@ -104,11 +118,19 @@ fun ControlBar(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                 ) {
-                    TextButton(onClick = onSave) {
-                        Text("Save", style = MaterialTheme.typography.labelSmall)
+                    IconButton(onClick = onSave) {
+                        Icon(Icons.Default.Save, contentDescription = "Save")
                     }
-                    TextButton(onClick = onLoad) {
-                        Text("Load", style = MaterialTheme.typography.labelSmall)
+                    IconButton(onClick = onLoad) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = "Load")
+                    }
+                    IconButton(onClick = onCopy) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                    }
+                    if (onShare != null) {
+                        IconButton(onClick = onShare) {
+                            Icon(Icons.Default.Share, contentDescription = "Share")
+                        }
                     }
                 }
             }
@@ -131,11 +153,19 @@ fun ControlBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    TextButton(onClick = onSave) {
-                        Text("Save", style = MaterialTheme.typography.labelSmall)
+                    IconButton(onClick = onSave) {
+                        Icon(Icons.Default.Save, contentDescription = "Save")
                     }
-                    TextButton(onClick = onLoad) {
-                        Text("Load", style = MaterialTheme.typography.labelSmall)
+                    IconButton(onClick = onLoad) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = "Load")
+                    }
+                    IconButton(onClick = onCopy) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                    }
+                    if (onShare != null) {
+                        IconButton(onClick = onShare) {
+                            Icon(Icons.Default.Share, contentDescription = "Share")
+                        }
                     }
                     SpeedSection(
                         speedMode = speedMode,
@@ -199,22 +229,22 @@ private fun ActionButtons(
     onSetSpeed: (SpeedMode) -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        TextButton(onClick = onReset) {
-            Text("Reset", style = MaterialTheme.typography.labelSmall)
+        IconButton(onClick = onReset) {
+            Icon(Icons.Default.Refresh, contentDescription = "Reset")
         }
-        TextButton(onClick = onStep, enabled = !isRunning) {
-            Text("Step", style = MaterialTheme.typography.labelSmall)
+        IconButton(onClick = onStep, enabled = !isRunning) {
+            Icon(Icons.Default.SkipNext, contentDescription = "Step")
         }
         if (isRunning) {
-            TextButton(onClick = onPause) {
-                Text("\u23F8 Pause", style = MaterialTheme.typography.labelSmall)
+            IconButton(onClick = onPause) {
+                Icon(Icons.Default.Pause, contentDescription = "Pause")
             }
         } else {
-            TextButton(
+            IconButton(
                 onClick = { onRun(speedMode) },
                 enabled = speedMode != SpeedMode.MANUAL,
             ) {
-                Text("\u25B6 Run", style = MaterialTheme.typography.labelSmall)
+                Icon(Icons.Default.PlayArrow, contentDescription = "Run")
             }
         }
     }

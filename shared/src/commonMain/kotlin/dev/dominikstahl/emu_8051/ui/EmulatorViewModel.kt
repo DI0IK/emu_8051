@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import dev.dominikstahl.emu_8051.asm.assemble
 import dev.dominikstahl.emu_8051.engine.CpuState
 import dev.dominikstahl.emu_8051.engine.Interpreter
+import dev.dominikstahl.emu_8051.platform.FileFormat
 import dev.dominikstahl.emu_8051.platform.FileStorage
+import dev.dominikstahl.emu_8051.platform.copyToClipboard
 import dev.dominikstahl.emu_8051.platform.createFileStorage
+import dev.dominikstahl.emu_8051.platform.platformShare
 import dev.dominikstahl.emu_8051.ui.components.hardware.ComponentSnapshot
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponent
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwRegistry
@@ -454,17 +457,21 @@ class EmulatorViewModel(
 
     fun saveSource(name: String) {
         viewModelScope.launch(Dispatchers.Default) {
-            storage.save(name, _uiState.value.sourceCode)
+            val content = FileFormat.encode(_uiState.value.sourceCode, _uiState.value.hwConfig)
+            storage.save(name, content)
             _uiState.value = _uiState.value.copy(savedFiles = storage.list().sorted())
         }
     }
 
     fun loadSource(name: String) {
         viewModelScope.launch(Dispatchers.Default) {
-            val content = storage.load(name)
-            if (content != null) {
-                updateSource(content)
+            val content = storage.load(name) ?: return@launch
+            val (sourceCode, config) = FileFormat.decode(content)
+            if (config.isNotEmpty()) {
+                needsTickComponents = null
+                _uiState.value = _uiState.value.copy(hwConfig = config)
             }
+            updateSource(sourceCode)
         }
     }
 
@@ -486,5 +493,15 @@ class EmulatorViewModel(
             storage.rename(oldName, newName)
             _uiState.value = _uiState.value.copy(savedFiles = storage.list().sorted())
         }
+    }
+
+    fun copySource() {
+        val content = FileFormat.encode(_uiState.value.sourceCode, _uiState.value.hwConfig)
+        copyToClipboard(content)
+    }
+
+    fun shareSource() {
+        val content = FileFormat.encode(_uiState.value.sourceCode, _uiState.value.hwConfig)
+        platformShare(content, "emu_8051 Program")
     }
 }

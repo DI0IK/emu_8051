@@ -2,11 +2,14 @@ package dev.dominikstahl.emu_8051.ui
 
 import dev.dominikstahl.emu_8051.asm.AssemblyError
 import dev.dominikstahl.emu_8051.ui.components.hardware.ComponentSnapshot
+import kotlinx.serialization.Serializable
 
 enum class SpeedMode { MANUAL, CUSTOM, UNLIMITED }
 
+@Serializable
 enum class Port(val addr: Int) { P0(0x80), P1(0x90), P2(0xA0), P3(0xB0) }
 
+@Serializable
 data class HwComponentConfig(
     val id: String,
     val label: String,
