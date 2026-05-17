@@ -37,8 +37,8 @@ android {
         applicationId = "dev.dominikstahl.emu_8051"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = project.property("versionCode").toString().toInt()
+        versionName = project.property("versionName").toString()
     }
     packaging {
         resources {

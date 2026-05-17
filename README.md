@@ -4,11 +4,14 @@ A Kotlin Multiplatform 8051 microcontroller emulator with a Compose Multiplatfor
 
 ## Features
 
-- **Full 8051 ISA** — all 256 opcodes implemented, including timers 0/1/2, interrupts, and bit-addressing
-- **Built-in assembler** — Intel ASM51 syntax with two-pass assembly, expression evaluation, and predefined SFR/bit symbols
-- **Hardware peripherals** — attach HD44780 LCD, 7-segment display, LED bars, matrix keypad, and toggle switches to port pins
-- **Debugging** — single-step, breakpoints, register/memory viewers, source-level PC tracking
-- **Speed control** — manual step, custom IPS target, and unlimited mode
+- **Full 8051 ISA** — all 256 opcodes implemented with accurate timing, flag handling, and interrupt interaction
+- **Timer/Counter** — Timer 0 (modes 0–3), Timer 1 (modes 0–2), Timer 2 (capture/reload/baud-rate/clock-out), gate control
+- **Interrupt System** — 6 interrupt sources with two-level priority and edge/level triggering
+- **Built-in assembler** — Intel ASM51 syntax with two-pass assembly, expression evaluation, forward references, and predefined SFR/bit symbols
+- **Hardware peripherals** — attach HD44780 LCD, 7-segment display, LED bar, single LED, toggle switches, matrix keypad, UART terminal, stepper motor, buzzer, and servo motor to port pins
+- **Debugging** — single-step, line breakpoints, register/memory/timer/serial viewers, source-level PC tracking
+- **Speed control** — manual step, custom IPS target (with presets), and unlimited mode
+- **Responsive UI** — desktop 3-panel layout, mobile tabbed layout (Editor/CPU/Hardware/Memory)
 - **Cross-platform** — desktop app via JVM, web via Wasm/JS, native mobile via Android/iOS
 
 ## Running
@@ -63,7 +66,7 @@ shared/src/commonMain/kotlin/
     InterruptController.kt, TimerController.kt
   ui/           — Compose Multiplatform UI
     components/ — screen panels (source editor, register view, memory viewer, control bar)
-    hardware/   — peripheral components (LCD, LED, 7-seg, keypad, toggle)
+    hardware/   — 10 peripheral components (HD44780 LCD, 7-segment, LED, LED bar, toggle, matrix keypad, UART terminal, stepper, buzzer, servo)
     EmulatorViewModel.kt, EmulatorUiState.kt
   App.kt        — shared Compose entry point
 

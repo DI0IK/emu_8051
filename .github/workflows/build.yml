@@ -201,3 +201,19 @@ jobs:
           force_orphan: true
           user_name: github-actions[bot]
           user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+  release:
+    name: Upload Release Assets
+    runs-on: ubuntu-latest
+    needs: [android, desktop-linux, desktop-windows, desktop-macos, ios, web]
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**

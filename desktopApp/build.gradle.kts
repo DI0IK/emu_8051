@@ -22,7 +22,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "dev.dominikstahl.emu_8051"
-            packageVersion = "1.0.0"
+            packageVersion = project.property("versionName").toString()
 
             macOS {
                 iconFile.set(project.file("desktopIcons/icon.icns"))
