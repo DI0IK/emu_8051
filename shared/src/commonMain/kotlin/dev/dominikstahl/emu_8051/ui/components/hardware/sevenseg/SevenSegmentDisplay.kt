@@ -27,7 +27,7 @@ fun SevenSegmentDisplay(
     modifier: Modifier = Modifier,
 ) {
     val onColor = color
-    val offColor = color.copy(alpha = 0.08f)
+    val offColor = color.copy(alpha = 0.18f)
     val dpOn = (value and 0x80) != 0
 
     Canvas(

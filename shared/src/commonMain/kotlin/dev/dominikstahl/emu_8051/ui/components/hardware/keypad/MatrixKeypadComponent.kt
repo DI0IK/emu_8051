@@ -29,42 +29,58 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.PortController
 import dev.dominikstahl.emu_8051.ui.components.hardware.PortField
 
 class MatrixKeypadComponent(config: HwComponentConfig) : HwComponent(config) {
-    private var pressedKeys: Set<String> = emptySet()
-    private val columnRefCount = mutableMapOf<Int, Int>()
+    private val pressedKeys = mutableSetOf<String>()
+    private val drivenCols = mutableSetOf<Int>()
+    private var portCtrl: PortController? = null
 
-    fun setKeyState(row: Int, col: Int, pressed: Boolean) {
-        val key = "$row,$col"
-        pressedKeys = if (pressed) pressedKeys + key else pressedKeys - key
-    }
+    override fun needsTick() = true
 
     override fun onUserInput(input: HwUserInput, portCtrl: PortController) {
+        this.portCtrl = portCtrl
         if (input is HwUserInput.KeyInput && input.compId == config.id) {
-            val col = input.col
-            val count = columnRefCount[col] ?: 0
+            val key = "${input.row},${input.col}"
             if (input.pressed) {
-                columnRefCount[col] = count + 1
-                if (count == 0) {
-                    portCtrl.drive(config.port, 1 shl col, 0)
-                }
+                pressedKeys.add(key)
             } else {
-                val newCount = count - 1
-                if (newCount < 1) {
-                    columnRefCount.remove(col)
-                    portCtrl.release(config.port, 1 shl col)
-                } else {
-                    columnRefCount[col] = newCount
-                }
+                pressedKeys.remove(key)
             }
-            setKeyState(input.row, input.col, input.pressed)
+        }
+    }
+
+    override fun tick(portVal: Int) {
+        val ctrl = portCtrl ?: return
+        val shouldDrive = mutableSetOf<Int>()
+
+        for (key in pressedKeys) {
+            val parts = key.split(",")
+            val row = parts[0].toInt()
+            val col = parts[1].toInt()
+            if ((portVal and (1 shl row)) == 0) {
+                shouldDrive.add(col)
+            }
+        }
+
+        for (col in drivenCols.toSet()) {
+            if (col !in shouldDrive) {
+                ctrl.release(config.port, 1 shl (col + 4))
+                drivenCols.remove(col)
+            }
+        }
+
+        for (col in shouldDrive) {
+            if (col !in drivenCols) {
+                ctrl.drive(config.port, 1 shl (col + 4), 0)
+                drivenCols.add(col)
+            }
         }
     }
 
     override fun reset() {
-        pressedKeys = emptySet()
-        columnRefCount.clear()
+        pressedKeys.clear()
+        drivenCols.clear()
     }
 
-    override fun snapshot(): ComponentSnapshot = KeypadSnapshot(pressedKeys)
+    override fun snapshot(): ComponentSnapshot = KeypadSnapshot(pressedKeys.toSet())
 }
 
 data class KeypadSnapshot(val pressedKeys: Set<String>) : ComponentSnapshot()
@@ -78,6 +94,8 @@ object MatrixKeypadFactory : HwComponentFactory {
     override fun defaultConfig(id: String) = HwComponentConfig(id, "P1 Keypad (4x4)", typeId, Port.P1, rows = 4, cols = 4)
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name} Keypad (${config.rows}x${config.cols})"
+
+    override fun needsTick(config: HwComponentConfig) = true
 
     @Composable
     override fun Render(

@@ -101,7 +101,7 @@ private fun DrawScope.drawCharGrid(
     val padPx = pad.toPx()
     val dotR = 1.05.dp.toPx()
 
-    val dotOn = Color(0xFFB8F0B8)
+    val dotOn = Color(0xFFD4F4D4)
 
     for ((lineIdx, lineData) in rawData.withIndex()) {
         for (colIdx in 0 until cols) {

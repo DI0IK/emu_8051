@@ -11,6 +11,9 @@ class CpuState {
     /** Set to true when an instruction writes to IE (0xA8) or IP (0xB8). */
     var interruptControllerAccessFlag: Boolean = false
 
+    /** Called when the program writes to SBUF (0x99) for UART transmission. */
+    var onSbufTx: ((UByte) -> Unit)? = null
+
     /** Program memory (code space), 64KB. Read-only at runtime. */
     val rom = UByteArray(65536)
 
@@ -346,6 +349,7 @@ class CpuState {
             if (addr == 0xE0) updateParity()
             if (addr == 0xD0) registerBankBase = ((value.toInt() shr 3) and 0x03) * 8
             if (addr == 0xA8 || addr == 0xB8) interruptControllerAccessFlag = true
+            if (addr == 0x99) onSbufTx?.invoke(value)
         }
     }
 

@@ -14,23 +14,31 @@ fun LedIndicator(
     color: Color = Color(0xFFFF4444),
     modifier: Modifier = Modifier,
 ) {
-    val glowColor = if (on) color else color.copy(alpha = 0.15f)
+    val onColor = color
+    val offColor = color.copy(alpha = 0.15f)
 
     Canvas(
-        modifier = modifier.size(16.dp),
+        modifier = modifier.size(20.dp),
         onDraw = {
-            val glowRadius = size.minDimension * 0.6f
-            val coreRadius = size.minDimension * 0.35f
             val center = Offset(size.width / 2f, size.height / 2f)
+            val r = size.minDimension / 2f
+            val coreR = r * 0.55f
 
             if (on) {
-                drawCircle(glowColor.copy(alpha = 0.3f), glowRadius, center)
+                drawCircle(onColor.copy(alpha = 0.2f), r * 0.85f, center)
             }
             drawCircle(
-                color = glowColor,
-                radius = coreRadius,
+                color = if (on) onColor else offColor,
+                radius = coreR,
                 center = center,
             )
+            if (on) {
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.35f),
+                    radius = coreR * 0.5f,
+                    center = Offset(center.x - r * 0.12f, center.y - r * 0.12f),
+                )
+            }
         }
     )
 }

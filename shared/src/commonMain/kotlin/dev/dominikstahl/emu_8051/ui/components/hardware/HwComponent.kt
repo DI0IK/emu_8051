@@ -21,4 +21,5 @@ object UnitSnapshot : ComponentSnapshot()
 open class HwUserInput {
     data class ToggleInput(val port: Port, val pin: Int, val on: Boolean) : HwUserInput()
     data class KeyInput(val compId: String, val row: Int, val col: Int, val pressed: Boolean) : HwUserInput()
+    data class SerialInput(val compId: String, val char: Char) : HwUserInput()
 }

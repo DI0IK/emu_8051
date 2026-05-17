@@ -200,7 +200,7 @@ private fun ColumnScope.MobileLayout(
     viewModel: EmulatorViewModel,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Editor", "CPU & HW", "Memory")
+    val tabs = listOf("Editor", "CPU", "Hardware", "Memory")
 
     Column(modifier = Modifier.fillMaxWidth().weight(1f)) {
         TabRow(selectedTabIndex = selectedTab) {
@@ -228,13 +228,19 @@ private fun ColumnScope.MobileLayout(
                         )
                     }
                 }
-                1 -> { // CPU Status & Peripherals Tab
+                1 -> { // CPU Status Tab
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        CpuInfoPanel(
+                            state = uiState,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                    }
+                }
+                2 -> { // Hardware Peripherals Tab
                     Column(
-                        modifier = Modifier.fillMaxSize(), // Removed .verticalScroll() from here
+                        modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        CpuInfoPanel(state = uiState)
-
                         HardwarePanel(
                             p0 = uiState.p0,
                             p1 = uiState.p1,
@@ -250,7 +256,7 @@ private fun ColumnScope.MobileLayout(
                         )
                     }
                 }
-                2 -> { // Hex Memory Dump Tab
+                3 -> { // Hex Memory Dump Tab
                     MemoryViewer(
                         getRom = { viewModel.getRomForDisplay() },
                         getRam = { viewModel.getRamForDisplay() },

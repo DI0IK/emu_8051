@@ -27,6 +27,10 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.led.LedFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.ledbar.LedBarFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.sevenseg.SevenSegFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.toggle.ToggleFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.uart.UartFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.stepper.StepperFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.buzzer.BuzzerFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.servo.ServoFactory
 
 interface PortController {
     fun drive(port: Port, mask: Int, value: Int)
@@ -77,6 +81,10 @@ fun registerBuiltinHardwareComponents() {
     HwRegistry.register(ToggleFactory)
     HwRegistry.register(MatrixKeypadFactory)
     HwRegistry.register(Hd44780Factory)
+    HwRegistry.register(UartFactory)
+    HwRegistry.register(StepperFactory)
+    HwRegistry.register(BuzzerFactory)
+    HwRegistry.register(ServoFactory)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

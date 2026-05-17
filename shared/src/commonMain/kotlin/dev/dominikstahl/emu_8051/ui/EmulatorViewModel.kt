@@ -10,12 +10,15 @@ import dev.dominikstahl.emu_8051.platform.FileStorage
 import dev.dominikstahl.emu_8051.platform.copyToClipboard
 import dev.dominikstahl.emu_8051.platform.createFileStorage
 import dev.dominikstahl.emu_8051.platform.platformShare
+import dev.dominikstahl.emu_8051.engine.RI_BIT
+import dev.dominikstahl.emu_8051.engine.TI_BIT
 import dev.dominikstahl.emu_8051.ui.components.hardware.ComponentSnapshot
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponent
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwRegistry
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwUserInput
 import dev.dominikstahl.emu_8051.ui.components.hardware.PortController
 import dev.dominikstahl.emu_8051.ui.components.hardware.registerBuiltinHardwareComponents
+import dev.dominikstahl.emu_8051.ui.components.hardware.uart.UartTerminalComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -60,6 +63,17 @@ class EmulatorViewModel(
 
     init {
         registerBuiltinHardwareComponents()
+        cpuState.onSbufTx = { byte ->
+            for (comp in _uiState.value.hwConfig) {
+                if (comp.type == "UART_TERMINAL" && comp.enabled) {
+                    val c = getOrCreateComponent(comp)
+                    if (c is UartTerminalComponent) {
+                        c.appendTx(byte)
+                    }
+                }
+            }
+            cpuState.SCON = (cpuState.SCON.toInt() or TI_BIT).toUByte()
+        }
     }
 
     private fun snapshotState(isSlow: Boolean = false, actualIps: Long = 0): EmulatorUiState {
@@ -369,6 +383,10 @@ class EmulatorViewModel(
         viewModelScope.launch(Dispatchers.Default) {
             mutex.withLock {
                 when (input) {
+                    is HwUserInput.SerialInput -> {
+                        cpuState.SBUF = input.char.code.toUByte()
+                        cpuState.SCON = (cpuState.SCON.toInt() or RI_BIT).toUByte()
+                    }
                     is HwUserInput.ToggleInput -> {
                         val idx = input.port.ordinal
                         val mask = 1 shl input.pin
@@ -382,15 +400,6 @@ class EmulatorViewModel(
                     }
                     is HwUserInput.KeyInput -> {
                         val comp = _uiState.value.hwConfig.find { it.id == input.compId } ?: return@withLock
-                        val idx = comp.port.ordinal
-                        val mask = 1 shl input.col
-                        if (input.pressed) {
-                            cpuState.externalDriven[idx] = cpuState.externalDriven[idx] or mask
-                            cpuState.externalValue[idx] = cpuState.externalValue[idx] and mask.inv()
-                        } else {
-                            cpuState.externalDriven[idx] = cpuState.externalDriven[idx] and mask.inv()
-                            cpuState.externalValue[idx] = cpuState.externalValue[idx] or mask
-                        }
                         components[input.compId]?.onUserInput(input, portController)
                     }
                 }
