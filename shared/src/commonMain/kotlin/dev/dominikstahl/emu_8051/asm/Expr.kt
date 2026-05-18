@@ -153,7 +153,11 @@ private fun parsePrimary(tokens: List<Token>, start: Int): ParseResult<Expr> {
             val (e, p) = parseDotSelect(tokens, start + 1)
             ParseResult(Expr.NotBit(e), p)
         }
-        else -> ParseResult(Expr.Number(0), start)
+        else -> {
+            // Treat unknown tokens as symbols for compatibility with syntax highlighting
+            // Always advance to prevent infinite loops
+            ParseResult(Expr.Symbol(tokens[start].text), start + 1)
+        }
     }
 }
 

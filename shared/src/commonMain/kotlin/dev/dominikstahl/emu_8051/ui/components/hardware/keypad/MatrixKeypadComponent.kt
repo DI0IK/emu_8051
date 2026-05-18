@@ -47,8 +47,9 @@ class MatrixKeypadComponent(config: HwComponentConfig) : HwComponent(config) {
         }
     }
 
-    override fun tick(portVal: Int) {
+    override fun tick(portValues: List<Int>) {
         val ctrl = portCtrl ?: return
+        val portVal = portValues.firstOrNull() ?: return
         val shouldDrive = mutableSetOf<Int>()
 
         for (key in pressedKeys) {
@@ -91,7 +92,7 @@ object MatrixKeypadFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig): HwComponent = MatrixKeypadComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "P1 Keypad (4x4)", typeId, Port.P1, rows = 4, cols = 4)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "P1 Keypad (4x4)", typeId, ports = listOf(Port.P1), rows = 4, cols = 4)
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name} Keypad (${config.rows}x${config.cols})"
 
@@ -101,7 +102,7 @@ object MatrixKeypadFactory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
         val s = snapshot as? KeypadSnapshot

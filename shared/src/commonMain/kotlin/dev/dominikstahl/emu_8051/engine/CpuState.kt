@@ -311,7 +311,10 @@ class CpuState {
         set(value) { sfr[0xF0 - 0x80] = value }
 
     /** Program Counter. 16-bit address of the next instruction to execute. */
-    var pc: Int = 0x0000
+    private var _pc: Int = 0x0000
+    var pc: Int
+        get() = _pc
+        set(value) { _pc = value and 0xFFFF }
 
     /** Read a byte from internal RAM (0x00-0x7F) or SFR space (0x80-0xFF).
      *  Returns the raw SFR value (latch for port SFRs). Use readPin() to read the effective

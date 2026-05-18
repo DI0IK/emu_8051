@@ -25,6 +25,7 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.hd44780.Hd44780Factory
 import dev.dominikstahl.emu_8051.ui.components.hardware.keypad.MatrixKeypadFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.led.LedFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.ledbar.LedBarFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.ledmatrix.LedMatrixFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.sevenseg.SevenSegFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.toggle.ToggleFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.uart.UartFactory
@@ -44,12 +45,13 @@ interface HwComponentFactory {
     fun defaultConfig(id: String): HwComponentConfig
     fun labelFor(config: HwComponentConfig): String
     fun needsTick(config: HwComponentConfig): Boolean = false
+    fun portCount(config: HwComponentConfig): Int = 1
 
     @Composable
     fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     )
 
@@ -85,6 +87,7 @@ fun registerBuiltinHardwareComponents() {
     HwRegistry.register(StepperFactory)
     HwRegistry.register(BuzzerFactory)
     HwRegistry.register(ServoFactory)
+    HwRegistry.register(LedMatrixFactory)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,10 +118,57 @@ fun PortField(
                     DropdownMenuItem(
                         text = { Text(p.name) },
                         onClick = {
-                            onUpdateComponent(config.id) { it.copy(port = p) }
+                            onUpdateComponent(config.id) { it.copy(ports = it.ports.toMutableList().apply { if (isNotEmpty()) set(0, p) else add(p) }) }
                             portExpanded = false
                         },
                     )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PortFields(
+    portCount: Int,
+    config: HwComponentConfig,
+    onUpdateComponent: (String, (HwComponentConfig) -> HwComponentConfig) -> Unit,
+) {
+    for (i in 0 until portCount) {
+        val port = config.ports.getOrNull(i) ?: Port.P1
+        var portExpanded by remember { mutableStateOf(false) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Port ${i + 1}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(50.dp))
+            ExposedDropdownMenuBox(
+                expanded = portExpanded,
+                onExpandedChange = { portExpanded = it },
+                modifier = Modifier.widthIn(min = 70.dp),
+            ) {
+                OutlinedTextField(
+                    value = port.name,
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = portExpanded) },
+                    modifier = Modifier.menuAnchor(),
+                    textStyle = MaterialTheme.typography.bodySmall,
+                )
+                ExposedDropdownMenu(expanded = portExpanded, onDismissRequest = { portExpanded = false }) {
+                    Port.entries.forEach { p ->
+                        DropdownMenuItem(
+                            text = { Text(p.name) },
+                            onClick = {
+                                onUpdateComponent(config.id) { c ->
+                                    val newPorts = c.ports.toMutableList()
+                                    while (newPorts.size <= i) newPorts.add(Port.P1)
+                                    newPorts[i] = p
+                                    c.copy(ports = newPorts)
+                                }
+                                portExpanded = false
+                            },
+                        )
+                    }
                 }
             }
         }

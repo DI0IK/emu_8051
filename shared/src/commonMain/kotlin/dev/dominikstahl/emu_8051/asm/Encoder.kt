@@ -181,6 +181,7 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
     val symbols = SymbolTable()
     initPredefinedSymbols(symbols)
     val errors = mutableListOf<AssemblyError>()
+    val warnings = mutableListOf<AssemblyWarning>()
 
     // ---- Pass 1: Build symbol table, compute PC ----
     var pc = 0
@@ -266,7 +267,7 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
     // Resolve deferred symbols (EQU, DATA, BIT, CODE)
     symbols.resolveDeferred(0)
 
-    if (errors.isNotEmpty()) return AssemblyResult.failure(errors)
+    if (errors.isNotEmpty()) return AssemblyResult.failure(errors, warnings)
 
     val sourceMap = mutableMapOf<Int, Int>()
     for (rec in records) {
@@ -329,8 +330,8 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
         }
     }
 
-    if (errors.isNotEmpty()) return AssemblyResult.failure(errors)
-    return AssemblyResult.success(rom, sourceMap)
+    if (errors.isNotEmpty()) return AssemblyResult.failure(errors, warnings)
+    return AssemblyResult.success(rom, sourceMap, warnings)
 }
 
 fun computeOpcode(instruction: Instruction, classified: List<Pair<Operand, Int>>): Int {

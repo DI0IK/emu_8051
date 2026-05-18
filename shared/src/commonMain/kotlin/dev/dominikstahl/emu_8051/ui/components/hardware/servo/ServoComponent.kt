@@ -36,7 +36,8 @@ class ServoComponent(config: HwComponentConfig) : HwComponent(config) {
 
     override fun needsTick() = true
 
-    override fun tick(portVal: Int) {
+    override fun tick(portValues: List<Int>) {
+        val portVal = portValues.firstOrNull() ?: return
         tickCount++
         val pinState = (portVal shr config.pin) and 1
         if (pinState == 1 && pulseStart == 0L) {
@@ -57,7 +58,7 @@ object ServoFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig) = ServoComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "Servo", typeId, Port.P1, pin = 1)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "Servo", typeId, ports = listOf(Port.P1), pin = 1)
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name}.${config.pin} Servo"
 
@@ -65,7 +66,7 @@ object ServoFactory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
         val angle = (snapshot as? ServoSnapshot)?.angle ?: 90

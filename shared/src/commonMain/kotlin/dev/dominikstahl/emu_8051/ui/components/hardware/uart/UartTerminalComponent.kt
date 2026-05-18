@@ -36,7 +36,7 @@ object UartFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig): HwComponent = UartTerminalComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "UART Terminal", typeId, Port.P1)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "UART Terminal", typeId, ports = listOf(Port.P1))
 
     override fun labelFor(config: HwComponentConfig) = "UART Terminal"
 
@@ -44,7 +44,7 @@ object UartFactory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
         val txText = (snapshot as? UartSnapshot)?.txBuffer ?: ""

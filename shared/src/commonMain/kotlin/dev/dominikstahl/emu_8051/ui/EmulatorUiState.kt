@@ -14,7 +14,7 @@ data class HwComponentConfig(
     val id: String,
     val label: String,
     val type: String,
-    val port: Port,
+    val ports: List<Port> = listOf(Port.P1),
     val pin: Int = -1,
     val enabled: Boolean = true,
     val rows: Int = 4,
@@ -22,7 +22,9 @@ data class HwComponentConfig(
     val lcdCols: Int = 16,
     val lcdLines: Int = 2,
     val props: Map<String, String> = emptyMap(),
-)
+) {
+    val port: Port get() = ports.firstOrNull() ?: Port.P1
+}
 
 fun defaultHwConfig(): List<HwComponentConfig> = emptyList()
 

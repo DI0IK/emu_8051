@@ -5,7 +5,7 @@ import dev.dominikstahl.emu_8051.ui.Port
 
 abstract class HwComponent(val config: HwComponentConfig) {
     open fun needsTick(): Boolean = false
-    open fun tick(portVal: Int) {}
+    open fun tick(portValues: List<Int>) {}
 
     open fun onUserInput(input: HwUserInput, portCtrl: PortController) {}
 

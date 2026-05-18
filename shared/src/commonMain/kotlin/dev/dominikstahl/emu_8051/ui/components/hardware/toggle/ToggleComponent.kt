@@ -26,7 +26,7 @@ object ToggleFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig): HwComponent = ToggleComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "P3.0 Toggle", typeId, Port.P3, pin = 0)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "P3.0 Toggle", typeId, ports = listOf(Port.P3), pin = 0)
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name}.${config.pin} Toggle"
 
@@ -34,9 +34,10 @@ object ToggleFactory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
+        val portValue = portValues.firstOrNull() ?: 0
         val on = (portValue and (1 shl config.pin)) != 0
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(

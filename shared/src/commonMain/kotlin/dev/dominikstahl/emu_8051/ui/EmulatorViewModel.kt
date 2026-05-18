@@ -356,14 +356,6 @@ class EmulatorViewModel(
         val snapshots = mutableMapOf<String, ComponentSnapshot>()
         for (comp in _uiState.value.hwConfig.filter { it.enabled }) {
             val component = getOrCreateComponent(comp)
-            
-            // Special handling for LED Matrix - update with both port values
-            if (component is dev.dominikstahl.emu_8051.ui.components.hardware.ledmatrix.LedMatrixComponent) {
-                val p1 = cpuState.getEffectivePort(dev.dominikstahl.emu_8051.ui.Port.P1.ordinal)
-                val p2 = cpuState.getEffectivePort(dev.dominikstahl.emu_8051.ui.Port.P2.ordinal)
-                component.setMatrixState(p1, p2)
-            }
-            
             snapshots[comp.id] = component.snapshot()
         }
         _uiState.value = _uiState.value.copy(componentSnapshots = snapshots)
@@ -386,7 +378,11 @@ class EmulatorViewModel(
             needsTickComponents = list
         }
         for (c in list) {
-            c.tick(cpuState.getEffectivePort(c.config.port.ordinal))
+            val portCount = HwRegistry.get(c.config.type)?.portCount(c.config) ?: 1
+            val portValues = (0 until portCount).map { i ->
+                cpuState.getEffectivePort(c.config.ports.getOrNull(i)?.ordinal ?: i)
+            }
+            c.tick(portValues)
         }
     }
 

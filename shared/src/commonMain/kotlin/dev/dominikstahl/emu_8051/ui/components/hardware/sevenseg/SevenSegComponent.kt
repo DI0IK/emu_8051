@@ -25,7 +25,7 @@ object SevenSegFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig): HwComponent = SevenSegComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "P2 7-Seg", typeId, Port.P2)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "P2 7-Seg", typeId, ports = listOf(Port.P2))
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name} 7-Seg"
 
@@ -33,9 +33,10 @@ object SevenSegFactory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
+        val portValue = portValues.firstOrNull() ?: 0
         Column {
             Text(
                 "${config.port.name} 7-Seg",

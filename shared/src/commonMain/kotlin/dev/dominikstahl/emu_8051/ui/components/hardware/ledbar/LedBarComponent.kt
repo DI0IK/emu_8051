@@ -27,7 +27,7 @@ object LedBarFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig): HwComponent = LedBarComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "P1 LED Bar", typeId, Port.P1)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "P1 LED Bar", typeId, ports = listOf(Port.P1))
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name} LED Bar"
 
@@ -35,9 +35,10 @@ object LedBarFactory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
+        val portValue = portValues.firstOrNull() ?: 0
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 config.port.name,

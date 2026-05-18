@@ -108,7 +108,7 @@ private fun DisplayTab(
         for (comp in enabled) {
             val factory = HwRegistry.get(comp.type)
             if (factory != null) {
-                val portValue = portValue(p0, p1, p2, p3, comp.port)
+                val portValues = comp.ports.map { portValue(p0, p1, p2, p3, it) }
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -118,7 +118,7 @@ private fun DisplayTab(
                         modifier = Modifier.padding(8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        factory.Render(comp, snapshots[comp.id], portValue, onUserInput)
+                        factory.Render(comp, snapshots[comp.id], portValues, onUserInput)
                     }
                 }
             }

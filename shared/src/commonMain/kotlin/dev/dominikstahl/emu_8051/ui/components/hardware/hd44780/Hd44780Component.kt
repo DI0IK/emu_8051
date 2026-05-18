@@ -32,7 +32,7 @@ class Hd44780Component(config: HwComponentConfig) : HwComponent(config) {
 
     val ctrl = Hd44780Controller(config.lcdCols, config.lcdLines)
 
-    override fun tick(portVal: Int) = ctrl.tick(portVal)
+    override fun tick(portValues: List<Int>) = ctrl.tick(portValues.firstOrNull() ?: 0)
 
     override fun reset() { ctrl.reset() }
 
@@ -55,7 +55,7 @@ object Hd44780Factory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig): HwComponent = Hd44780Component(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "P2 LCD (16x2)", typeId, Port.P2, lcdCols = 16, lcdLines = 2)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "P2 LCD (16x2)", typeId, ports = listOf(Port.P2), lcdCols = 16, lcdLines = 2)
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name} LCD (${config.lcdCols}x${config.lcdLines})"
 
@@ -65,7 +65,7 @@ object Hd44780Factory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
         val s = snapshot as? LcdSnapshot

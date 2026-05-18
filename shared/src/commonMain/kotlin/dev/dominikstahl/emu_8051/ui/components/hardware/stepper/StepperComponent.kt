@@ -37,7 +37,8 @@ class StepperComponent(config: HwComponentConfig) : HwComponent(config) {
 
     override fun needsTick() = true
 
-    override fun tick(portVal: Int) {
+    override fun tick(portValues: List<Int>) {
+        val portVal = portValues.firstOrNull() ?: return
         val pattern = portVal and 0x0F
         if (pattern == lastPattern || pattern == 0 || pattern == 0x0F) return
 
@@ -63,7 +64,7 @@ object StepperFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig) = StepperComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "Stepper", typeId, Port.P1)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "Stepper", typeId, ports = listOf(Port.P1))
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name} Stepper"
 
@@ -71,7 +72,7 @@ object StepperFactory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
         val angle = (snapshot as? StepperSnapshot)?.positionDegrees ?: 0f

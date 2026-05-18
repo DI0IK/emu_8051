@@ -32,7 +32,8 @@ class BuzzerComponent(config: HwComponentConfig) : HwComponent(config) {
 
     override fun needsTick() = true
 
-    override fun tick(portVal: Int) {
+    override fun tick(portValues: List<Int>) {
+        val portVal = portValues.firstOrNull() ?: return
         on = (portVal and (1 shl config.pin)) != 0
     }
 
@@ -45,7 +46,7 @@ object BuzzerFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig) = BuzzerComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "Buzzer", typeId, Port.P1, pin = 0)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "Buzzer", typeId, ports = listOf(Port.P1), pin = 0)
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name}.${config.pin} Buzzer"
 
@@ -53,7 +54,7 @@ object BuzzerFactory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
         val on = (snapshot as? BuzzerSnapshot)?.on ?: false

@@ -28,7 +28,7 @@ object LedFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig): HwComponent = LedComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "P1.7 LED", typeId, Port.P1, pin = 7)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "P1.7 LED", typeId, ports = listOf(Port.P1), pin = 7)
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name}.${config.pin} LED"
 
@@ -36,9 +36,10 @@ object LedFactory : HwComponentFactory {
     override fun Render(
         config: HwComponentConfig,
         snapshot: ComponentSnapshot?,
-        portValue: Int,
+        portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
+        val portValue = portValues.firstOrNull() ?: 0
         val on = (portValue and (1 shl config.pin)) != 0
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             LedIndicator(on = on, color = Color(0xFFFF4444))

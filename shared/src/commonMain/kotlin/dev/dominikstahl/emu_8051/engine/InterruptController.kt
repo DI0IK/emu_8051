@@ -29,13 +29,13 @@ class InterruptController(private val state: CpuState) {
             PX0_BIT, IP_ADDR, true),
         InterruptSource(1, 0x000B, TF0_BIT, TCON_ADDR,
             ET0_BIT, IE_ADDR,
-            PT0_BIT, IP_ADDR, false),
+            PT0_BIT, IP_ADDR, true),
         InterruptSource(2, 0x0013, IE1_BIT, TCON_ADDR,
             EX1_BIT, IE_ADDR,
             PX1_BIT, IP_ADDR, true),
         InterruptSource(3, 0x001B, TF1_BIT, TCON_ADDR,
             ET1_BIT, IE_ADDR,
-            PT1_BIT, IP_ADDR, false),
+            PT1_BIT, IP_ADDR, true),
         InterruptSource(4, 0x0023, TI_BIT or RI_BIT,
             SCON_ADDR,
             ES_BIT, IE_ADDR,
@@ -139,13 +139,17 @@ class InterruptController(private val state: CpuState) {
         state.pc = source.vector
 
         if (source.autoClearEdge) {
-            val isEdge = when (source.index) {
-                0 -> (state.TCON.toInt() and IT0_BIT) != 0
-                2 -> (state.TCON.toInt() and IT1_BIT) != 0
-                else -> false
-            }
-            if (isEdge) {
-                state.TCON = ((state.TCON.toInt() and source.flagMask.inv()) and 0xFF).toUByte()
+            when (source.index) {
+                1, 3 -> {
+                    state.TCON = ((state.TCON.toInt() and source.flagMask.inv()) and 0xFF).toUByte()
+                }
+                0, 2 -> {
+                    val isEdge = if (source.index == 0) (state.TCON.toInt() and IT0_BIT) != 0
+                    else (state.TCON.toInt() and IT1_BIT) != 0
+                    if (isEdge) {
+                        state.TCON = ((state.TCON.toInt() and source.flagMask.inv()) and 0xFF).toUByte()
+                    }
+                }
             }
         }
     }
