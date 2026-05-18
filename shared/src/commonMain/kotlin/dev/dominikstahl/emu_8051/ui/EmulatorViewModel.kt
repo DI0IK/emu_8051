@@ -355,7 +355,16 @@ class EmulatorViewModel(
     private fun captureSnapshots() {
         val snapshots = mutableMapOf<String, ComponentSnapshot>()
         for (comp in _uiState.value.hwConfig.filter { it.enabled }) {
-            snapshots[comp.id] = getOrCreateComponent(comp).snapshot()
+            val component = getOrCreateComponent(comp)
+            
+            // Special handling for LED Matrix - update with both port values
+            if (component is dev.dominikstahl.emu_8051.ui.components.hardware.ledmatrix.LedMatrixComponent) {
+                val p1 = cpuState.getEffectivePort(dev.dominikstahl.emu_8051.ui.Port.P1.ordinal)
+                val p2 = cpuState.getEffectivePort(dev.dominikstahl.emu_8051.ui.Port.P2.ordinal)
+                component.setMatrixState(p1, p2)
+            }
+            
+            snapshots[comp.id] = component.snapshot()
         }
         _uiState.value = _uiState.value.copy(componentSnapshots = snapshots)
     }
