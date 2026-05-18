@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.2.0 — 2026-05-18
+
+### Added
+
+- **LED Matrix component** — 8×8 display with brightness decay (persistence of vision), active HIGH polarity, configurable row and column ports
+- **Example programs** — `examples/` folder with 11 ASM files demonstrating every hardware component: LED blink, LED bar wave, 7-segment counter, toggle switch, matrix keypad, HD44780 LCD, UART terminal, stepper motor, buzzer, servo PWM, LED matrix "A"
+- **Assembler warnings** — `AssemblyResult` now tracks warnings alongside errors (e.g. unknown symbol usage)
+
+### Changed
+
+- **`HwComponent.tick()` now accepts `List<Int>`** — refactored from single `Int` to support multi-port components (LED Matrix, Matrix Keypad)
+- **`HwComponentFactory.portCount()`** — new method lets components declare how many ports they need; `EmulatorViewModel.tickComponents()` passes all relevant port values per component
+- **All component tick() overrides updated** — keypad, LCD, buzzer, servo, stepper now use `portValues.firstOrNull()`
+- **PC bounds to 16-bit** — `CpuState.pc` setter now masks with `0xFFFF` to prevent out-of-range values
+- **Timer interrupt flag auto-clear** — `InterruptController` now correctly clears TF0/TF1 on timer interrupt dispatch
+- **Assembler unknown-token handling** — `Expr.kt` treats unknown tokens as symbols instead of silent `Number(0)`, preventing infinite parse loops and enabling syntax highlighting for undefined symbols
+- **Active HIGH polarity** — all hardware components use active HIGH (`1 = on`) convention, consistent with standard 8051 practice
+
+### Fixed
+
+- **Expr.kt infinite loop** — unknown tokens no longer return `Expr.Number(0)` at the same position, eliminating the parsing stall
+
 ## v1.1.0 — 2026-05-17
 
 ### Added
