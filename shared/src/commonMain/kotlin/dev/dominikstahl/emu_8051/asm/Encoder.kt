@@ -181,6 +181,11 @@ private fun validateInstruction(stmt: Stmt.Instruction, result: EncodedInstructi
         val expr = stmt.operands[i]
         if (inst.mnemonic == "JMP") continue
         val type = inst.operands.getOrNull(i) ?: continue
+        if (type !in setOf(
+                Operand.IMM8, Operand.IMM16, Operand.DIRECT, Operand.BIT,
+                Operand.NOT_BIT, Operand.REL, Operand.ADDR11, Operand.ADDR16
+            )
+        ) continue
         val value = evalExpr(expr, symbols, pc)
         when (type) {
             Operand.IMM8, Operand.DIRECT, Operand.BIT, Operand.NOT_BIT ->

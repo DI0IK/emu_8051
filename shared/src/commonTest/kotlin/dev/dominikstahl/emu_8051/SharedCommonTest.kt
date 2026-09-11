@@ -22,7 +22,7 @@ class SharedCommonTest {
 
         cpu.externalDriven[1] = 1
         cpu.externalValue[1] = 0
-        assertEquals(0, cpu.getEffectivePort(1))
+        assertEquals(0xFE, cpu.getEffectivePort(1))
 
         cpu.P1 = 0xFFu
         cpu.externalValue[1] = 1
