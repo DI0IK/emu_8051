@@ -6,6 +6,15 @@ import dev.dominikstahl.emu_8051.engine.Operand
 
 class AssemblerException(message: String) : Exception(message)
 
+private fun containsSymbol(expr: Expr): Boolean = when (expr) {
+    is Expr.Symbol -> true
+    is Expr.Unary -> containsSymbol(expr.expr)
+    is Expr.Binary -> containsSymbol(expr.left) || containsSymbol(expr.right)
+    is Expr.Immediate -> containsSymbol(expr.expr)
+    is Expr.NotBit -> containsSymbol(expr.expr)
+    else -> false
+}
+
 fun safeEval(expr: Expr, symbols: SymbolTable, pc: Int, default: Int = 0): Int {
     return try { evalExpr(expr, symbols, pc) } catch (_: Exception) { default }
 }
@@ -188,7 +197,11 @@ private fun validateInstruction(stmt: Stmt.Instruction, result: EncodedInstructi
         ) continue
         val value = evalExpr(expr, symbols, pc)
         when (type) {
-            Operand.IMM8, Operand.DIRECT, Operand.BIT, Operand.NOT_BIT ->
+            Operand.IMM8 ->
+                if (value !in 0..0xFF && !(containsSymbol(expr) && value in 0..0xFFFF)) {
+                    throw AssemblerException("Value $value does not fit in 8 bits")
+                }
+            Operand.DIRECT, Operand.BIT, Operand.NOT_BIT ->
                 if (value !in 0..0xFF) throw AssemblerException("Value $value does not fit in 8 bits")
             Operand.IMM16, Operand.ADDR16 ->
                 if (value !in 0..0xFFFF) throw AssemblerException("Address/value $value does not fit in 16 bits")

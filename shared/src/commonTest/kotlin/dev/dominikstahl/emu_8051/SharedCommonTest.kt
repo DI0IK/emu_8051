@@ -29,6 +29,6 @@ class SharedCommonTest {
         assertEquals(1, cpu.getEffectivePort(1) and 1)
 
         cpu.P1 = 0xFEu
-        assertEquals(0, cpu.getEffectivePort(1))
+        assertEquals(0xFE, cpu.getEffectivePort(1))
     }
 }
