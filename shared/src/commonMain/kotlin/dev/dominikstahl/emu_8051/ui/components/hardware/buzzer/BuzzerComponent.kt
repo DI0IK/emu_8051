@@ -24,6 +24,8 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponentFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwUserInput
 import dev.dominikstahl.emu_8051.ui.components.hardware.PinField
 import dev.dominikstahl.emu_8051.ui.components.hardware.PortField
+import dev.dominikstahl.emu_8051.ui.components.hardware.PolarityField
+import dev.dominikstahl.emu_8051.ui.components.hardware.isActiveLow
 
 data class BuzzerSnapshot(val on: Boolean) : ComponentSnapshot()
 
@@ -34,7 +36,7 @@ class BuzzerComponent(config: HwComponentConfig) : HwComponent(config) {
 
     override fun tick(portValues: List<Int>) {
         val portVal = portValues.firstOrNull() ?: return
-        on = (portVal and (1 shl config.pin)) != 0
+        on = ((portVal and (1 shl config.pin)) != 0).xor(config.isActiveLow(default = false))
     }
 
     override fun snapshot() = BuzzerSnapshot(on)
@@ -80,6 +82,7 @@ object BuzzerFactory : HwComponentFactory {
         PinField(config) { newPin ->
             onUpdateComponent(config.id) { it.copy(pin = newPin) }
         }
+        PolarityField(config, defaultActiveLow = false, onUpdateComponent = onUpdateComponent)
     }
 }
 

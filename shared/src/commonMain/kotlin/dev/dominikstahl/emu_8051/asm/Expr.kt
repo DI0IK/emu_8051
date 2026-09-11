@@ -12,6 +12,7 @@ sealed class Expr {
     data object AtAPlusDPTR : Expr()
     data object AtAPlusPC : Expr()
     data class NotBit(val expr: Expr) : Expr()
+    data class Invalid(val message: String, val line: Int) : Expr()
 }
 
 enum class UnaryOp { PLUS, MINUS, NOT, HIGH, LOW }
@@ -40,28 +41,24 @@ fun tokenToBinaryOp(type: TokenType): BinaryOp = when (type) {
     else -> error("Not a binary op: $type")
 }
 
-fun parseExpr(tokens: List<Token>, start: Int): ParseResult<Expr> {
-    return parseSum(tokens, start)
-}
+fun parseExpr(tokens: List<Token>, start: Int): ParseResult<Expr> = parseBinary(tokens, start, 0)
 
-private fun parseSum(tokens: List<Token>, start: Int): ParseResult<Expr> {
-    var (left, pos) = parseProduct(tokens, start)
-    while (pos < tokens.size && tokens[pos].type in listOf(TokenType.PLUS, TokenType.MINUS)) {
-        val op = tokenToBinaryOp(tokens[pos].type)
-        pos++
-        val (right, newPos) = parseProduct(tokens, pos)
-        left = Expr.Binary(left, op, right)
-        pos = newPos
-    }
-    return ParseResult(left, pos)
-}
+private val precedence = mapOf(
+    TokenType.KW_OR to 1, TokenType.KW_XOR to 2, TokenType.KW_AND to 3,
+    TokenType.KW_SHR to 4, TokenType.KW_SHL to 4,
+    TokenType.PLUS to 5, TokenType.MINUS to 5,
+    TokenType.STAR to 6, TokenType.SLASH to 6, TokenType.KW_MOD to 6,
+    TokenType.DOT to 7
+)
 
-private fun parseProduct(tokens: List<Token>, start: Int): ParseResult<Expr> {
+private fun parseBinary(tokens: List<Token>, start: Int, minPrecedence: Int): ParseResult<Expr> {
     var (left, pos) = parseUnary(tokens, start)
-    while (pos < tokens.size && tokens[pos].type in listOf(TokenType.STAR, TokenType.SLASH, TokenType.KW_MOD)) {
+    while (pos < tokens.size) {
+        val p = precedence[tokens[pos].type] ?: break
+        if (p < minPrecedence) break
         val op = tokenToBinaryOp(tokens[pos].type)
         pos++
-        val (right, newPos) = parseUnary(tokens, pos)
+        val (right, newPos) = parseBinary(tokens, pos, p + 1)
         left = Expr.Binary(left, op, right)
         pos = newPos
     }
@@ -73,41 +70,27 @@ private fun parseUnary(tokens: List<Token>, start: Int): ParseResult<Expr> {
 
     return when (tokens[start].type) {
         TokenType.PLUS -> {
-            val (e, p) = parseDotSelect(tokens, start + 1)
+            val (e, p) = parseUnary(tokens, start + 1)
             ParseResult(Expr.Unary(UnaryOp.PLUS, e), p)
         }
         TokenType.MINUS -> {
-            val (e, p) = parseDotSelect(tokens, start + 1)
+            val (e, p) = parseUnary(tokens, start + 1)
             ParseResult(Expr.Unary(UnaryOp.MINUS, e), p)
         }
         TokenType.KW_NOT -> {
-            val (e, p) = parseDotSelect(tokens, start + 1)
+            val (e, p) = parseUnary(tokens, start + 1)
             ParseResult(Expr.Unary(UnaryOp.NOT, e), p)
         }
         TokenType.KW_HIGH -> {
-            val (e, p) = parseDotSelect(tokens, start + 1)
+            val (e, p) = parseUnary(tokens, start + 1)
             ParseResult(Expr.Unary(UnaryOp.HIGH, e), p)
         }
         TokenType.KW_LOW -> {
-            val (e, p) = parseDotSelect(tokens, start + 1)
+            val (e, p) = parseUnary(tokens, start + 1)
             ParseResult(Expr.Unary(UnaryOp.LOW, e), p)
         }
-        else -> parseDotSelect(tokens, start)
+        else -> parsePrimary(tokens, start)
     }
-}
-
-private fun parseDotSelect(tokens: List<Token>, start: Int): ParseResult<Expr> {
-    var (left, pos) = parsePrimary(tokens, start)
-    while (pos < tokens.size && tokens[pos].type == TokenType.DOT) {
-        pos++
-        if (pos < tokens.size && tokens[pos].type == TokenType.NUMBER) {
-            left = Expr.Binary(left, BinaryOp.DOT, Expr.Number(tokens[pos].intValue))
-            pos++
-        } else {
-            break
-        }
-    }
-    return ParseResult(left, pos)
 }
 
 private fun parsePrimary(tokens: List<Token>, start: Int): ParseResult<Expr> {
@@ -124,7 +107,10 @@ private fun parsePrimary(tokens: List<Token>, start: Int): ParseResult<Expr> {
         }
         TokenType.LPAREN -> {
             val (e, pos) = parseExpr(tokens, start + 1)
-            val endPos = if (pos < tokens.size && tokens[pos].type == TokenType.RPAREN) pos + 1 else pos
+            if (pos >= tokens.size || tokens[pos].type != TokenType.RPAREN) {
+                return ParseResult(Expr.Invalid("Missing closing parenthesis", tokens[start].line), pos)
+            }
+            val endPos = pos + 1
             ParseResult(e, endPos)
         }
         TokenType.HASH -> {
@@ -132,7 +118,7 @@ private fun parsePrimary(tokens: List<Token>, start: Int): ParseResult<Expr> {
             ParseResult(Expr.Immediate(e), p)
         }
         TokenType.AT -> {
-            if (start + 1 >= tokens.size) return ParseResult(Expr.Number(0), start + 1)
+            if (start + 1 >= tokens.size) return ParseResult(Expr.Invalid("Incomplete @ operand", tokens[start].line), start + 1)
             when (tokens[start + 1].text.uppercase()) {
                 "R0" -> ParseResult(Expr.AtReg(0), start + 2)
                 "R1" -> ParseResult(Expr.AtReg(1), start + 2)
@@ -142,21 +128,19 @@ private fun parsePrimary(tokens: List<Token>, start: Int): ParseResult<Expr> {
                         when (tokens[start + 3].text.uppercase()) {
                             "DPTR" -> ParseResult(Expr.AtAPlusDPTR, start + 4)
                             "PC" -> ParseResult(Expr.AtAPlusPC, start + 4)
-                            else -> ParseResult(Expr.Number(0), start + 3)
+                            else -> ParseResult(Expr.Invalid("Unknown @A+ operand", tokens[start + 3].line), start + 4)
                         }
-                    } else ParseResult(Expr.Number(0), start + 2)
+                    } else ParseResult(Expr.Invalid("Expected @A+DPTR or @A+PC", tokens[start].line), start + 2)
                 }
-                else -> ParseResult(Expr.Number(0), start + 2)
+                else -> ParseResult(Expr.Invalid("Unknown @ operand", tokens[start + 1].line), start + 2)
             }
         }
         TokenType.SLASH -> {
-            val (e, p) = parseDotSelect(tokens, start + 1)
+            val (e, p) = parseBinary(tokens, start + 1, precedence.getValue(TokenType.DOT))
             ParseResult(Expr.NotBit(e), p)
         }
         else -> {
-            // Treat unknown tokens as symbols for compatibility with syntax highlighting
-            // Always advance to prevent infinite loops
-            ParseResult(Expr.Symbol(tokens[start].text), start + 1)
+            ParseResult(Expr.Invalid("Expected expression, got ${tokens[start].type}", tokens[start].line), start + 1)
         }
     }
 }
@@ -184,8 +168,8 @@ fun evalExpr(expr: Expr, symbols: SymbolTable, pc: Int): Int {
                 BinaryOp.PLUS -> l + r
                 BinaryOp.MINUS -> l - r
                 BinaryOp.TIMES -> l * r
-                BinaryOp.DIV -> if (r != 0) l / r else 0
-                BinaryOp.MOD -> if (r != 0) l % r else 0
+                BinaryOp.DIV -> if (r != 0) l / r else throw AssemblerException("Division by zero")
+                BinaryOp.MOD -> if (r != 0) l % r else throw AssemblerException("Modulo by zero")
                 BinaryOp.AND -> l and r
                 BinaryOp.OR -> l or r
                 BinaryOp.XOR -> l xor r
@@ -200,5 +184,6 @@ fun evalExpr(expr: Expr, symbols: SymbolTable, pc: Int): Int {
         is Expr.AtAPlusDPTR -> throw AssemblerException("@A+DPTR operand in expression context")
         is Expr.AtAPlusPC -> throw AssemblerException("@A+PC operand in expression context")
         is Expr.NotBit -> evalExpr(expr.expr, symbols, pc)
+        is Expr.Invalid -> throw AssemblerException(expr.message)
     }
 }

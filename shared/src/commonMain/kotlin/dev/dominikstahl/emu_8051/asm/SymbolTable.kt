@@ -6,19 +6,28 @@ class SymbolTable {
     private val values = mutableMapOf<String, Int>()
     private val types = mutableMapOf<String, SymType>()
     private val deferred = mutableMapOf<String, Expr>()
+    private val deferredPc = mutableMapOf<String, Int>()
 
     fun predefined(name: String, value: Int, type: SymType) {
-        values[name] = value
-        types[name] = type
+        values[name.uppercase()] = value
+        types[name.uppercase()] = type
     }
 
-    fun set(name: String, value: Int, type: SymType) {
-        values[name] = value
-        types[name] = type
+    fun set(name: String, value: Int, type: SymType): Boolean {
+        val key = name.uppercase()
+        if (values.containsKey(key) || deferred.containsKey(key)) return false
+        values[key] = value
+        types[key] = type
+        return true
     }
 
-    fun defer(name: String, expr: Expr) {
-        deferred[name] = expr
+    fun defer(name: String, expr: Expr, type: SymType = SymType.EQU, pc: Int = 0): Boolean {
+        val key = name.uppercase()
+        if (values.containsKey(key) || deferred.containsKey(key)) return false
+        deferred[key] = expr
+        deferredPc[key] = pc
+        types[key] = type
+        return true
     }
 
     fun resolveDeferred(pc: Int) {
@@ -29,10 +38,11 @@ class SymbolTable {
             for (name in keys) {
                 val expr = deferred[name] ?: continue
                 try {
-                    val v = evalExpr(expr, this, pc)
+                    val v = evalExpr(expr, this, deferredPc[name] ?: pc)
                     values[name] = v
                     types[name] = types[name] ?: SymType.EQU
                     deferred.remove(name)
+                    deferredPc.remove(name)
                     changed = true
                 } catch (_: Exception) {
                 }
@@ -42,15 +52,18 @@ class SymbolTable {
 
     fun get(name: String): Int? {
         val upper = name.uppercase()
-        return values[upper] ?: values[name]
+        return values[upper]
     }
 
     fun getType(name: String): SymType? {
         val upper = name.uppercase()
-        return types[upper] ?: types[name]
+        return types[upper]
     }
 
-    fun has(name: String): Boolean = values.containsKey(name) || values.containsKey(name.uppercase())
+    fun has(name: String): Boolean = values.containsKey(name.uppercase()) || deferred.containsKey(name.uppercase())
+
+    fun unresolved(): Set<String> = deferred.keys.toSet()
+    fun unresolvedExpressions(): Map<String, Expr> = deferred.toMap()
 }
 
 fun initPredefinedSymbols(table: SymbolTable) {

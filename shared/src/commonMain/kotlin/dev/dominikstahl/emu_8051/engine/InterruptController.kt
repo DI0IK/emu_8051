@@ -53,29 +53,23 @@ class InterruptController(private val state: CpuState) {
         val int0 = (p3 and 0x04) == 0
         val int1 = (p3 and 0x08) == 0
 
+        var newTcon = tcon
         if ((tcon and IT0_BIT) != 0) {
             if (prevInt0 && !int0) {
-                state.TCON = ((tcon or IE0_BIT) and 0xFF).toUByte()
+                newTcon = newTcon or IE0_BIT
             }
         } else {
-            if (int0) {
-                state.TCON = ((tcon or IE0_BIT) and 0xFF).toUByte()
-            } else {
-                state.TCON = ((tcon and IE0_BIT.inv()) and 0xFF).toUByte()
-            }
+            newTcon = if (int0) newTcon or IE0_BIT else newTcon and IE0_BIT.inv()
         }
 
         if ((tcon and IT1_BIT) != 0) {
             if (prevInt1 && !int1) {
-                state.TCON = ((tcon or IE1_BIT) and 0xFF).toUByte()
+                newTcon = newTcon or IE1_BIT
             }
         } else {
-            if (int1) {
-                state.TCON = ((tcon or IE1_BIT) and 0xFF).toUByte()
-            } else {
-                state.TCON = ((tcon and IE1_BIT.inv()) and 0xFF).toUByte()
-            }
+            newTcon = if (int1) newTcon or IE1_BIT else newTcon and IE1_BIT.inv()
         }
+        state.TCON = (newTcon and 0xFF).toUByte()
 
         prevInt0 = int0
         prevInt1 = int1
@@ -87,22 +81,26 @@ class InterruptController(private val state: CpuState) {
 
         if ((state.IE.toInt() and EA_BIT) == 0) return 0
 
-        for (source in sources) {
-            val flagReg = readSFR(source.flagAddr)
-            if ((flagReg.toInt() and source.flagMask) == 0) continue
+        // The hardware resolves priority level before source order.
+        for (high in listOf(true, false)) {
+            for (source in sources) {
+                val flagReg = readSFR(source.flagAddr)
+                if ((flagReg.toInt() and source.flagMask) == 0) continue
 
-            val enableReg = readSFR(source.enableAddr)
-            if ((enableReg.toInt() and source.enableMask) == 0) continue
+                val enableReg = readSFR(source.enableAddr)
+                if ((enableReg.toInt() and source.enableMask) == 0) continue
 
-            val ipReg = readSFR(source.priorityAddr)
-            val isHighPriority = (ipReg.toInt() and source.priorityMask) != 0
+                val ipReg = readSFR(source.priorityAddr)
+                val isHighPriority = (ipReg.toInt() and source.priorityMask) != 0
 
-            if (isHighPriority && highPriorityInService) continue
-            if (!isHighPriority && lowPriorityInService) continue
+                if (isHighPriority != high) continue
+                if (isHighPriority && highPriorityInService) continue
+                if (!isHighPriority && (lowPriorityInService || highPriorityInService)) continue
 
-            acknowledge(source, isHighPriority)
-            lastInterruptCycles = 2
-            return 2
+                acknowledge(source, isHighPriority)
+                lastInterruptCycles = 2
+                return 2
+            }
         }
 
         return 0

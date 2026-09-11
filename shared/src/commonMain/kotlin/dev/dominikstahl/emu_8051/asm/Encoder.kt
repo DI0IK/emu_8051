@@ -97,6 +97,7 @@ fun getOperandTypes(expr: Expr, symbols: SymbolTable, pc: Int): List<Pair<Operan
             val v = safeEval(expr.expr, symbols, pc)
             listOf(Operand.NOT_BIT to (v and 0xFF))
         }
+        is Expr.Invalid -> emptyList()
     }
 }
 
@@ -172,6 +173,51 @@ fun encodeOperandBytes(
     return bytes
 }
 
+private fun validateInstruction(stmt: Stmt.Instruction, result: EncodedInstruction, pc: Int, symbols: SymbolTable) {
+    val inst = result.instruction
+    if (stmt.operands.size != inst.operands.size && !(inst.mnemonic == "JMP" && stmt.operands.size == 1))
+        throw AssemblerException("Wrong operand count for ${stmt.mnemonic}")
+    for (i in stmt.operands.indices) {
+        val expr = stmt.operands[i]
+        if (inst.mnemonic == "JMP") continue
+        val type = inst.operands.getOrNull(i) ?: continue
+        val value = evalExpr(expr, symbols, pc)
+        when (type) {
+            Operand.IMM8, Operand.DIRECT, Operand.BIT, Operand.NOT_BIT ->
+                if (value !in 0..0xFF) throw AssemblerException("Value $value does not fit in 8 bits")
+            Operand.IMM16, Operand.ADDR16 ->
+                if (value !in 0..0xFFFF) throw AssemblerException("Address/value $value does not fit in 16 bits")
+            Operand.REL -> {
+                val offset = value - (pc + inst.bytes)
+                if (offset !in -128..127) throw AssemblerException("Relative branch out of range: $offset")
+            }
+            Operand.ADDR11 -> {
+                if (value !in 0..0xFFFF) throw AssemblerException("Address $value does not fit in 16 bits")
+                if ((value and 0xF800) != ((pc + 2) and 0xF800))
+                    throw AssemblerException("AJMP/ACALL target is outside the current 2KiB page")
+            }
+            else -> {}
+        }
+        if (type == Operand.BIT || type == Operand.NOT_BIT) {
+            val addressable = (value in 0x20..0x2F) || value in 0x80..0xFF ||
+                (expr is Expr.Symbol && symbols.getType(expr.name) == SymType.BIT)
+            if (!addressable) throw AssemblerException("Invalid bit address: $value")
+        }
+        if (expr is Expr.Binary && expr.op == BinaryOp.DOT) {
+            val base = evalExpr(expr.left, symbols, pc)
+            val bit = evalExpr(expr.right, symbols, pc)
+            if (bit !in 0..7) throw AssemblerException("Bit index out of range: $bit")
+            if (base !in 0x20..0x2F && !(base in 0x80..0xFF && (base and 7) == 0))
+                throw AssemblerException("Address is not bit-addressable: $base")
+        }
+        if ((type == Operand.BIT || type == Operand.NOT_BIT) &&
+            expr is Expr.Symbol && symbols.getType(expr.name) != SymType.BIT
+        ) {
+            throw AssemblerException("Symbol ${expr.name} is not a bit symbol")
+        }
+    }
+}
+
 private data class Record(
     val stmt: Stmt,
     val address: Int
@@ -197,26 +243,40 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                     pc = try {
                         evalExpr(stmt.expr, symbols, pc)
                     } catch (e: Exception) {
-                        errors.add(AssemblyError(0, "ORG expression error: ${e.message}"))
+                        errors.add(AssemblyError(stmt.line, "ORG expression error: ${e.message}"))
+                        break
+                    }
+                    if (pc !in 0..0xFFFF) {
+                        errors.add(AssemblyError(stmt.line, "ORG address out of range: $pc"))
                         break
                     }
                 }
                 is Stmt.End -> { endEncountered = true }
-                is Stmt.Equ -> symbols.defer(stmt.symbol, stmt.expr)
-                is Stmt.Data -> symbols.defer(stmt.symbol, stmt.expr)
-                is Stmt.Bit -> symbols.defer(stmt.symbol, stmt.expr)
-                is Stmt.Code -> symbols.defer(stmt.symbol, stmt.expr)
+                is Stmt.Equ -> if (!symbols.defer(stmt.symbol, stmt.expr, SymType.EQU, pc))
+                    errors.add(AssemblyError(stmt.line, "Duplicate symbol: ${stmt.symbol}"))
+                is Stmt.Data -> if (!symbols.defer(stmt.symbol, stmt.expr, SymType.DATA, pc))
+                    errors.add(AssemblyError(stmt.line, "Duplicate symbol: ${stmt.symbol}"))
+                is Stmt.Bit -> if (!symbols.defer(stmt.symbol, stmt.expr, SymType.BIT, pc))
+                    errors.add(AssemblyError(stmt.line, "Duplicate symbol: ${stmt.symbol}"))
+                is Stmt.Code -> if (!symbols.defer(stmt.symbol, stmt.expr, SymType.CODE, pc))
+                    errors.add(AssemblyError(stmt.line, "Duplicate symbol: ${stmt.symbol}"))
                 is Stmt.Label -> {
-                    symbols.set(stmt.name, pc, SymType.LABEL)
+                    if (!symbols.set(stmt.name, pc, SymType.LABEL))
+                        errors.add(AssemblyError(0, "Duplicate symbol: ${stmt.name}"))
                 }
                 is Stmt.Instruction -> {
                     if (stmt.label != null) {
-                        symbols.set(stmt.label, pc, SymType.LABEL)
+                        if (!symbols.set(stmt.label, pc, SymType.LABEL))
+                            errors.add(AssemblyError(stmt.line, "Duplicate symbol: ${stmt.label}"))
                     }
                     val result = findInstruction(stmt.mnemonic, stmt.operands, symbols, pc)
                     if (result != null) {
-                        records.add(Record(stmt, pc))
-                        pc += result.instruction.bytes
+                        if (result.instruction.bytes > 0x10000 - pc) {
+                            errors.add(AssemblyError(stmt.line, "Instruction exceeds code address space"))
+                        } else {
+                            records.add(Record(stmt, pc))
+                            pc += result.instruction.bytes
+                        }
                     } else if (stmt.mnemonic.uppercase() !in Instruction.byMnemonic) {
                         errors.add(AssemblyError(stmt.line, "Unknown mnemonic: ${stmt.mnemonic}"))
                     } else {
@@ -225,7 +285,8 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                 }
                 is Stmt.Db -> {
                     if (stmt.label != null) {
-                        symbols.set(stmt.label, pc, SymType.LABEL)
+                        if (!symbols.set(stmt.label, pc, SymType.LABEL))
+                            errors.add(AssemblyError(0, "Duplicate symbol: ${stmt.label}"))
                     }
                     var size = 0
                     for (item in stmt.values) {
@@ -235,26 +296,33 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                         }
                     }
                     records.add(Record(stmt, pc))
-                    pc += size
+                    if (size > 0x10000 - pc) errors.add(AssemblyError(0, "DB data exceeds address space"))
+                    else pc += size
                 }
                 is Stmt.Dw -> {
                     if (stmt.label != null) {
-                        symbols.set(stmt.label, pc, SymType.LABEL)
+                        if (!symbols.set(stmt.label, pc, SymType.LABEL))
+                            errors.add(AssemblyError(0, "Duplicate symbol: ${stmt.label}"))
                     }
                     records.add(Record(stmt, pc))
-                    pc += stmt.values.size * 2
+                    val size = stmt.values.size * 2
+                    if (size > 0x10000 - pc) errors.add(AssemblyError(0, "DW data exceeds address space"))
+                    else pc += size
                 }
                 is Stmt.Ds -> {
                     if (stmt.label != null) {
-                        symbols.set(stmt.label, pc, SymType.LABEL)
+                        if (!symbols.set(stmt.label, pc, SymType.LABEL))
+                            errors.add(AssemblyError(stmt.line, "Duplicate symbol: ${stmt.label}"))
                     }
                     val count = try {
                         evalExpr(stmt.count, symbols, pc)
                     } catch (e: Exception) {
-                        errors.add(AssemblyError(0, "DS count error: ${e.message}"))
+                        errors.add(AssemblyError(stmt.line, "DS count error: ${e.message}"))
                         0
                     }
-                    if (count > 0) pc += count
+                    if (count < 0 || count > 0x10000 - pc) {
+                        errors.add(AssemblyError(stmt.line, "DS count out of range: $count"))
+                    } else pc += count
                 }
                 is Stmt.Blank -> {}
                 is Stmt.ErrorMsg -> errors.add(AssemblyError(stmt.line, stmt.message))
@@ -266,6 +334,51 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
 
     // Resolve deferred symbols (EQU, DATA, BIT, CODE)
     symbols.resolveDeferred(0)
+    for ((name, expr) in symbols.unresolvedExpressions()) {
+        try {
+            evalExpr(expr, symbols, 0)
+            errors.add(AssemblyError(0, "Undefined symbol: $name"))
+        } catch (e: AssemblerException) {
+            errors.add(AssemblyError(0, "$name: ${e.message}"))
+        }
+
+    }
+
+    for (stmt in statements) {
+        val declaration = when (stmt) {
+            is Stmt.Data -> Triple(stmt.symbol, stmt.expr, 8)
+            is Stmt.Bit -> Triple(stmt.symbol, stmt.expr, 8)
+            is Stmt.Code -> Triple(stmt.symbol, stmt.expr, 16)
+            else -> null
+        } ?: continue
+        try {
+                val value = symbols.get(declaration.first)
+                    ?: throw AssemblerException("Undefined symbol: ${declaration.first}")
+                val valid = when (stmt) {
+                    is Stmt.Bit -> value in 0x00..0xFF &&
+                        ((value in 0x20..0x2F) || (value in 0x80..0xFF))
+                    else -> value in 0..((1 shl declaration.third) - 1)
+                }
+                if (!valid) {
+                    errors.add(AssemblyError(
+                        when (stmt) {
+                            is Stmt.Data -> stmt.line
+                            is Stmt.Bit -> stmt.line
+                            is Stmt.Code -> stmt.line
+                            else -> 0
+                        },
+                        "Value $value is out of range for ${when (stmt) {
+                            is Stmt.Data -> "DATA"
+                            is Stmt.Bit -> "BIT"
+                            is Stmt.Code -> "CODE"
+                            else -> "symbol"
+                        }}"
+                    ))
+                }
+        } catch (_: AssemblerException) {
+            // The unresolved-symbol pass above reports the underlying error.
+        }
+    }
 
     if (errors.isNotEmpty()) return AssemblyResult.failure(errors, warnings)
 
@@ -291,6 +404,7 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                     }
 
                     val inst = result.instruction
+                    validateInstruction(stmt, result, rec.address, symbols)
                     val opcode = computeOpcode(inst, result.classified)
                     val operandBytes = encodeOperandBytes(inst, result.classified, rec.address)
 
@@ -305,10 +419,14 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                         when (item) {
                             is DbItem.ExprValue -> {
                                 val v = evalExpr(item.expr, symbols, addr)
+                                if (v !in 0..0xFF) throw AssemblerException("DB value $v does not fit in 8 bits")
                                 rom[addr++] = v.toUByte()
                             }
                             is DbItem.StringValue -> {
                                 for (ch in item.string) {
+                                    if (ch.code > 0xFF) {
+                                        throw AssemblerException("DB string character is not an 8-bit value")
+                                    }
                                     rom[addr++] = ch.code.toUByte()
                                 }
                             }
@@ -319,6 +437,7 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                     var addr = rec.address
                     for (expr in stmt.values) {
                         val v = evalExpr(expr, symbols, addr)
+                        if (v !in 0..0xFFFF) throw AssemblerException("DW value $v does not fit in 16 bits")
                         rom[addr++] = ((v shr 8) and 0xFF).toUByte()
                         rom[addr++] = (v and 0xFF).toUByte()
                     }
@@ -326,7 +445,17 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                 else -> {}
             }
         } catch (e: AssemblerException) {
-            errors.add(AssemblyError(0, e.message ?: "Encoding error"))
+            val line = when (val s = rec.stmt) {
+                is Stmt.Instruction -> s.line
+                is Stmt.Org -> s.line
+                is Stmt.Equ -> s.line
+                is Stmt.Data -> s.line
+                is Stmt.Bit -> s.line
+                is Stmt.Code -> s.line
+                is Stmt.Ds -> s.line
+                else -> 0
+            }
+            errors.add(AssemblyError(line, e.message ?: "Encoding error"))
         }
     }
 

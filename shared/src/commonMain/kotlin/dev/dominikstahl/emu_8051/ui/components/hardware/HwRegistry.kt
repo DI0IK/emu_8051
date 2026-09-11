@@ -11,6 +11,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -205,7 +206,27 @@ fun PinField(
                         pinExpanded = false
                     })
                 }
+
             }
+        }
+    }
+}
+
+@Composable
+fun PolarityField(
+    config: HwComponentConfig,
+    defaultActiveLow: Boolean,
+    onUpdateComponent: (String, (HwComponentConfig) -> HwComponentConfig) -> Unit,
+) {
+    val activeLow = config.isActiveLow(defaultActiveLow)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Polarity", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(60.dp))
+        TextButton(onClick = {
+            onUpdateComponent(config.id) {
+                it.copy(props = it.props + ("activeLow" to (!activeLow).toString()))
+            }
+        }) {
+            Text(if (activeLow) "Active-low" else "Active-high", style = MaterialTheme.typography.bodySmall)
         }
     }
 }

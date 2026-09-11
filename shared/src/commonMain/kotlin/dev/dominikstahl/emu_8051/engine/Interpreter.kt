@@ -148,11 +148,7 @@ class Interpreter(val state: CpuState) {
 
         state.totalCycles += cycles
 
-        if ((state.TCON.toInt() and (TR0_BIT or TR1_BIT)) != 0 ||
-            (state.T2CON.toInt() and TR2_BIT) != 0
-        ) {
-            repeat(cycles) { timerController.tick() }
-        }
+        repeat(cycles) { timerController.tick() }
 
         interruptController.sample()
 
@@ -161,6 +157,9 @@ class Interpreter(val state: CpuState) {
         }
 
         state.totalCycles += interruptController.lastInterruptCycles
+        // Interrupt acknowledge consumes two machine cycles, during which timers
+        // continue to run just as they do for an ordinary instruction.
+        repeat(interruptController.lastInterruptCycles) { timerController.tick() }
 
         return cycles + interruptController.lastInterruptCycles
     }

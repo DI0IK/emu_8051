@@ -345,11 +345,13 @@ class EmulatorViewModel(
     private val components = mutableMapOf<String, HwComponent>()
 
     private fun getOrCreateComponent(comp: HwComponentConfig): HwComponent {
-        return components.getOrPut(comp.id) {
-            val factory = HwRegistry.get(comp.type)
-            requireNotNull(factory) { "Unknown hardware component type: ${comp.type}" }
-            factory.createComponent(comp)
+        val existing = components[comp.id]
+        if (existing != null && existing.config == comp) {
+            return existing
         }
+        val factory = HwRegistry.get(comp.type)
+        requireNotNull(factory) { "Unknown hardware component type: ${comp.type}" }
+        return factory.createComponent(comp).also { components[comp.id] = it }
     }
 
     private fun captureSnapshots() {
@@ -391,18 +393,17 @@ class EmulatorViewModel(
             mutex.withLock {
                 when (input) {
                     is HwUserInput.SerialInput -> {
-                        cpuState.SBUF = input.char.code.toUByte()
-                        cpuState.SCON = (cpuState.SCON.toInt() or RI_BIT).toUByte()
+                        cpuState.receiveSbuf(input.char.code.toUByte())
                     }
                     is HwUserInput.ToggleInput -> {
                         val idx = input.port.ordinal
                         val mask = 1 shl input.pin
                         if (input.on) {
-                            cpuState.externalDriven[idx] = cpuState.externalDriven[idx] or mask
-                            cpuState.externalValue[idx] = cpuState.externalValue[idx] or mask
-                        } else {
+                            // Active-low switch: pressing it pulls the pin to ground.
                             cpuState.externalDriven[idx] = cpuState.externalDriven[idx] or mask
                             cpuState.externalValue[idx] = cpuState.externalValue[idx] and mask.inv()
+                        } else {
+                            cpuState.externalDriven[idx] = cpuState.externalDriven[idx] and mask.inv()
                         }
                     }
                     is HwUserInput.KeyInput -> {
@@ -421,8 +422,23 @@ class EmulatorViewModel(
     fun getSfrForDisplay(): UByteArray = cpuState.sfr
 
     fun updateHwConfig(config: List<HwComponentConfig>) {
+        val oldConfig = _uiState.value.hwConfig.associateBy { it.id }
+        val newConfig = config.associateBy { it.id }
+        for ((id, old) in oldConfig) {
+            if (old.type != "TOGGLE" || !old.enabled) continue
+            val replacement = newConfig[id]
+            if (replacement == null ||
+                !replacement.enabled ||
+                replacement.type != old.type ||
+                replacement.port != old.port ||
+                replacement.pin != old.pin
+            ) {
+                portController.release(old.port, 1 shl old.pin)
+            }
+        }
         needsTickComponents = null
         _uiState.value = _uiState.value.copy(hwConfig = config)
+        captureSnapshots()
     }
 
     private var _nextHwId = 1

@@ -20,7 +20,7 @@ MAIN:   MOV SP, #2Fh
         SETB EA
         SETB TR0
 
-        SETB P1.0           ; buzzer off (active low)
+        SETB P1.0           ; transistor off (active high)
         SJMP $
 
 TIMER0_ISR:

@@ -14,6 +14,17 @@ abstract class HwComponent(val config: HwComponentConfig) {
     abstract fun snapshot(): ComponentSnapshot
 }
 
+/** Component wiring polarity, kept in props for backwards-compatible configs. */
+fun HwComponentConfig.isActiveLow(default: Boolean): Boolean =
+    when (props["activeLow"]?.lowercase()) {
+        "true" -> true
+        "false" -> false
+        else -> default
+    }
+
+fun HwComponentConfig.withActiveLow(activeLow: Boolean): HwComponentConfig =
+    copy(props = props + ("activeLow" to activeLow.toString()))
+
 abstract class ComponentSnapshot
 
 object UnitSnapshot : ComponentSnapshot()

@@ -14,6 +14,8 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponentFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwUserInput
 import dev.dominikstahl.emu_8051.ui.components.hardware.UnitSnapshot
 import dev.dominikstahl.emu_8051.ui.components.hardware.PortField
+import dev.dominikstahl.emu_8051.ui.components.hardware.PolarityField
+import dev.dominikstahl.emu_8051.ui.components.hardware.isActiveLow
 
 class SevenSegComponent(config: HwComponentConfig) : HwComponent(config) {
     override fun snapshot(): ComponentSnapshot = UnitSnapshot
@@ -43,7 +45,10 @@ object SevenSegFactory : HwComponentFactory {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            SevenSegmentDisplay(portValue, color = Color(0xFFFF4444))
+            SevenSegmentDisplay(
+                if (config.isActiveLow(default = false)) portValue.inv() else portValue,
+                color = Color(0xFFFF4444),
+            )
         }
     }
 
@@ -54,5 +59,6 @@ object SevenSegFactory : HwComponentFactory {
         onUpdateComponent: (String, (HwComponentConfig) -> HwComponentConfig) -> Unit,
     ) {
         PortField(config, onUpdateComponent)
+        PolarityField(config, defaultActiveLow = false, onUpdateComponent = onUpdateComponent)
     }
 }

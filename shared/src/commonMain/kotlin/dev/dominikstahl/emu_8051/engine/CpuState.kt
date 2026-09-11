@@ -13,6 +13,8 @@ class CpuState {
 
     /** Called when the program writes to SBUF (0x99) for UART transmission. */
     var onSbufTx: ((UByte) -> Unit)? = null
+    /** SBUF is physically two registers: CPU writes go to tx, reads come from rx. */
+    private var sbufTx: UByte = 0u
 
     /** Program memory (code space), 64KB. Read-only at runtime. */
     val rom = UByteArray(65536)
@@ -36,13 +38,47 @@ class CpuState {
     val externalDriven = IntArray(4)
     val externalValue = IntArray(4)
 
-    /** Compute effective port value by merging SFR latch with external drive. */
+    /** Alternate-function output drive — bitmask/value per port index (0=P0..3=P3). */
+    private val alternateDriven = IntArray(4)
+    private val alternateValue = IntArray(4)
+
+    /**
+     * Compute the digital pin value.  The external API intentionally remains a
+     * mask/value pair, so a driven zero represents a component pulling a line
+     * low and a driven one represents a component releasing it high.  A CPU
+     * low is dominant; this prevents a component from overriding an actively
+     * driven output.  A released P0 line has no pull-up on an AT89S52.  Since
+     * the digital API cannot represent Z, it is deterministically read as low.
+     */
     fun getEffectivePort(portIdx: Int): Int {
+        require(portIdx in 0..3)
         val sfrIdx = portIdx * 16
-        val sfrVal = sfr[sfrIdx].toInt()
-        val driven = externalDriven[portIdx]
-        return if (driven == 0) sfrVal
-            else (sfrVal and driven.inv()) or (externalValue[portIdx] and driven)
+        val alternateMask = alternateDriven[portIdx]
+        val latch = sfr[sfrIdx].toInt()
+        val portValue = (latch and alternateMask.inv()) or
+            (alternateValue[portIdx] and alternateMask)
+        val cpuLow = ((portValue.inv()) and 0xFF) and 0xFF
+        val externalMask = externalDriven[portIdx]
+        val releasedDefault = if (portIdx == 0) 0 else 0xFF
+        val releasable = cpuLow.inv() and 0xFF
+        // An external low wins only while the CPU has released the pin.
+        return (((releasedDefault and externalMask.inv()) or
+            (externalValue[portIdx] and externalMask)) and releasable)
+    }
+
+    /** Drive a port pin through an enabled alternate hardware function. */
+    fun setAlternatePortOutput(portIdx: Int, bit: Int, enabled: Boolean, value: Boolean) {
+        val mask = 1 shl bit
+        if (enabled) {
+            alternateDriven[portIdx] = alternateDriven[portIdx] or mask
+            alternateValue[portIdx] = if (value) {
+                alternateValue[portIdx] or mask
+            } else {
+                alternateValue[portIdx] and mask.inv()
+            }
+        } else {
+            alternateDriven[portIdx] = alternateDriven[portIdx] and mask.inv()
+        }
     }
 
     // --- Port 0 (0x80) ---
@@ -180,7 +216,15 @@ class CpuState {
     /** Serial Data Buffer at 0x99. Two physically separate registers: transmit (write) and receive (read). */
     var SBUF: UByte
         get() = sfr[0x99 - 0x80]
-        set(value) { sfr[0x99 - 0x80] = value }
+        set(value) {
+            sbufTx = value
+            onSbufTx?.invoke(value)
+        }
+
+    fun receiveSbuf(value: UByte) {
+        sfr[0x99 - 0x80] = value
+        SCON = (SCON.toInt() or RI_BIT).toUByte()
+    }
 
     // --- Port 2 (0xA0) ---
 
@@ -324,6 +368,7 @@ class CpuState {
         if (addr < 0x80) {
             return ram[addr]
         }
+        if (addr == 0x99) return SBUF
         return sfr[addr - 0x80]
     }
 
@@ -348,11 +393,14 @@ class CpuState {
         if (addr < 0x80) {
             ram[addr] = value
         } else {
+            if (addr == 0x99) {
+                SBUF = value
+                return
+            }
             sfr[addr - 0x80] = value
             if (addr == 0xE0) updateParity()
             if (addr == 0xD0) registerBankBase = ((value.toInt() shr 3) and 0x03) * 8
             if (addr == 0xA8 || addr == 0xB8) interruptControllerAccessFlag = true
-            if (addr == 0x99) onSbufTx?.invoke(value)
         }
     }
 
@@ -369,6 +417,8 @@ class CpuState {
 
     /** Reset the CPU to its default state (same as hardware reset). */
     fun reset() {
+        sfr.fill(0u)
+        sbufTx = 0u
         totalCycles = 0L
         interruptControllerAccessFlag = false
         interruptController?.reset()
@@ -388,6 +438,8 @@ class CpuState {
 
         externalDriven.fill(0)
         externalValue.fill(0)
+        alternateDriven.fill(0)
+        alternateValue.fill(0)
 
         updateParity()
     }
