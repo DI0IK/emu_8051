@@ -97,11 +97,19 @@ fun tokenize(source: String): List<Token> {
                             else -> { sb.append(s[pos]) }
                         }
                     } else {
+                        if (s[pos] == '\n' || s[pos] == '\r') {
+                            error("Unterminated string")
+                            break
+                        }
                         sb.append(s[pos])
                     }
                     pos++; col++
                 }
-                if (pos < s.length) { pos++; col++ }
+                if (pos < s.length && s[pos] == quote) { pos++; col++ }
+                else if (pos >= s.length || s[pos] == '\n' || s[pos] == '\r') {
+                    // The error token is retained so the parser reports the source line.
+                    if (tokens.lastOrNull()?.type != TokenType.ERROR) error("Unterminated string")
+                }
                 tokens.add(Token(TokenType.STRING, sb.toString(), 0, line, startCol))
             }
 
@@ -111,7 +119,9 @@ fun tokenize(source: String): List<Token> {
                 while (pos < s.length && s[pos].digitToIntOrNull(16) != null) { pos++; col++ }
                 val hexStr = s.substring(start + 2, pos)
                 if (hexStr.isNotEmpty()) {
-                    emit(TokenType.NUMBER, s.substring(start, pos), hexStr.toInt(16))
+                    val value = hexStr.toIntOrNull(16)
+                    if (value == null) error("Number out of range")
+                    else emit(TokenType.NUMBER, s.substring(start, pos), value)
                 } else {
                     error("Invalid hex number"); pos = start + 2; col = start + 3
                 }
@@ -124,7 +134,9 @@ fun tokenize(source: String): List<Token> {
                 if (pos < s.length && (s[pos] == 'h' || s[pos] == 'H')) {
                     val digits = s.substring(start, pos)
                     if (digits.all { it.digitToIntOrNull(16) != null }) {
-                        emit(TokenType.NUMBER, s.substring(start, pos + 1), digits.toInt(16))
+                        val value = digits.toIntOrNull(16)
+                        if (value == null) error("Number out of range")
+                        else emit(TokenType.NUMBER, s.substring(start, pos + 1), value)
                         pos++; col++
                     } else {
                         error("Invalid hex digits")
@@ -132,15 +144,21 @@ fun tokenize(source: String): List<Token> {
                 } else if (pos < s.length && (s[pos] == 'b' || s[pos] == 'B')) {
                     val digits = s.substring(start, pos)
                     if (digits.all { it == '0' || it == '1' }) {
-                        emit(TokenType.NUMBER, s.substring(start, pos + 1), digits.toInt(2))
+                        val value = digits.toIntOrNull(2)
+                        if (value == null) error("Number out of range")
+                        else emit(TokenType.NUMBER, s.substring(start, pos + 1), value)
                         pos++; col++
                     } else {
                         error("Invalid binary digits")
                     }
                 } else {
                     val numStr = s.substring(start, pos)
-                    if (numStr.all { it.isDigit() }) {
-                        emit(TokenType.NUMBER, numStr, numStr.toInt(10))
+                    if (pos < s.length && (s[pos].isLetter() || s[pos] == '_')) {
+                        error("Invalid numeric literal")
+                    } else if (numStr.all { it.isDigit() }) {
+                        val value = numStr.toIntOrNull(10)
+                        if (value == null) error("Number out of range")
+                        else emit(TokenType.NUMBER, numStr, value)
                     } else {
                         error("Invalid number: $numStr (missing 'h' suffix?)")
                     }
@@ -156,14 +174,18 @@ fun tokenize(source: String): List<Token> {
                 if (word.length > 1 && (word.last() == 'h' || word.last() == 'H')) {
                     val digits = word.dropLast(1)
                     if (digits.all { it.digitToIntOrNull(16) != null }) {
-                        emit(TokenType.NUMBER, word, digits.toInt(16))
+                        val value = digits.toIntOrNull(16)
+                        if (value == null) error("Number out of range")
+                        else emit(TokenType.NUMBER, word, value)
                         continue
                     }
                 }
                 if (word.length > 1 && (word.last() == 'b' || word.last() == 'B')) {
                     val digits = word.dropLast(1)
                     if (digits.all { it == '0' || it == '1' }) {
-                        emit(TokenType.NUMBER, word, digits.toInt(2))
+                        val value = digits.toIntOrNull(2)
+                        if (value == null) error("Number out of range")
+                        else emit(TokenType.NUMBER, word, value)
                         continue
                     }
                 }

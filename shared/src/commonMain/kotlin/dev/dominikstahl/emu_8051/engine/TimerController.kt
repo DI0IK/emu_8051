@@ -23,7 +23,7 @@ class TimerController(private val state: CpuState) {
         val timer1mode = (tmod shr 4) and 0x03
 
         tickTimer0(timer0mode, tmod, tcon, t0)
-        if (timer0mode == 3) tickTimer0_TH0(tcon)
+        if (timer0mode == 3) tickTimer0_TH0(tmod, tcon, t1)
         tickTimer1(timer1mode, timer0mode, tmod, tcon, t1)
         tickTimer2(tcon, p1, t2, prevT2EX && !t2ex)
 
@@ -44,37 +44,38 @@ class TimerController(private val state: CpuState) {
         val int0 = (state.getEffectivePort(3) and 0x04) == 0
 
         if (!tr) return
-        if (gate && !int0) return
+        // GATE is active-high on INT0: a gated timer runs while INT0 is high.
+        if (gate && int0) return
 
         var tl = state.TL0.toInt()
         var th = state.TH0.toInt()
 
-        if (!ct) {
-            tl = (tl + 1) and 0xFF
-        } else if (prevT0 && !t0Pin) {
-            tl = (tl + 1) and 0xFF
-        }
+        val event = !ct || (prevT0 && !t0Pin)
+        if (!event) return
 
         when (mode) {
             0 -> {
-                if ((tl and 0x1F) == 0) {
-                    th = (th + 1) and 0xFF
-                    if (th == 0) setTCONbit(TF0_BIT)
-                }
+                val count = ((th shl 5) or (tl and 0x1F)) + 1
+                if (count > 0x1FFF) setTCONbit(TF0_BIT)
+                th = (count shr 5) and 0xFF
+                tl = count and 0x1F
             }
             1 -> {
+                tl = (tl + 1) and 0xFF
                 if (tl == 0) {
                     th = (th + 1) and 0xFF
                     if (th == 0) setTCONbit(TF0_BIT)
                 }
             }
             2 -> {
+                tl = (tl + 1) and 0xFF
                 if (tl == 0) {
                     tl = state.TH0.toInt()
                     setTCONbit(TF0_BIT)
                 }
             }
             3 -> {
+                tl = (tl + 1) and 0xFF
                 if (tl == 0) setTCONbit(TF0_BIT)
             }
         }
@@ -83,9 +84,13 @@ class TimerController(private val state: CpuState) {
         state.TH0 = th.toUByte()
     }
 
-    private fun tickTimer0_TH0(tcon: Int) {
+    private fun tickTimer0_TH0(tmod: Int, tcon: Int, t1Pin: Boolean) {
         val tr1 = (tcon and TR1_BIT) != 0
         if (!tr1) return
+        val int1 = (state.getEffectivePort(3) and 0x08) == 0
+        if ((tmod and GATE1_BIT) != 0 && int1) return
+        val ct1 = (tmod and CT1_BIT) != 0
+        if (ct1 && !(prevT1 && !t1Pin)) return
 
         var th = state.TH0.toInt()
         th = (th + 1) and 0xFF
@@ -107,35 +112,37 @@ class TimerController(private val state: CpuState) {
         val int1 = (state.getEffectivePort(3) and 0x08) == 0
 
         if (!tr) return
-        if (gate && !int1) return
+        if (gate && int1) return
 
         var tl = state.TL1.toInt()
         var th = state.TH1.toInt()
 
-        if (!ct) {
-            tl = (tl + 1) and 0xFF
-        } else if (prevT1 && !t1Pin) {
-            tl = (tl + 1) and 0xFF
-        }
+        val event = !ct || (prevT1 && !t1Pin)
+        if (!event) return
 
         if (timer0StealsTF1) {
             // Timer 1 ticks for baud rate but TH0 owns TF1
+            tl = (tl + 1) and 0xFF
             if (tl == 0) th = (th + 1) and 0xFF
         } else {
             when (mode) {
                 0 -> {
-                    if ((tl and 0x1F) == 0) {
-                        th = (th + 1) and 0xFF
-                        if (th == 0) setTCONbit(TF1_BIT)
+                    val count = ((th shl 5) or (tl and 0x1F)) + 1
+                    th = (count shr 5) and 0xFF
+                    tl = count and 0x1F
+                    if (count > 0x1FFF) {
+                        setTCONbit(TF1_BIT)
                     }
                 }
                 1 -> {
+                    tl = (tl + 1) and 0xFF
                     if (tl == 0) {
                         th = (th + 1) and 0xFF
                         if (th == 0) setTCONbit(TF1_BIT)
                     }
                 }
                 2 -> {
+                    tl = (tl + 1) and 0xFF
                     if (tl == 0) {
                         tl = state.TH1.toInt()
                         setTCONbit(TF1_BIT)
@@ -155,8 +162,6 @@ class TimerController(private val state: CpuState) {
     private fun tickTimer2(tcon: Int, p1: Int, t2Pin: Boolean, fallingT2EX: Boolean) {
         val t2con = state.T2CON.toInt()
         val tr2 = (t2con and TR2_BIT) != 0
-        if (!tr2) return
-
         val ct2 = (t2con and CT2_BIT) != 0
         val rclk = (t2con and RCLK_BIT) != 0
         val tclk = (t2con and TCLK_BIT) != 0
@@ -167,22 +172,33 @@ class TimerController(private val state: CpuState) {
         val dcen = (t2mod and DCEN_BIT) != 0
         val isBaudGen = rclk || tclk
 
+        if (!tr2) {
+            state.setAlternatePortOutput(1, 0, false, false)
+            return
+        }
+        if (!t2oe) {
+            state.setAlternatePortOutput(1, 0, false, false)
+        } else {
+            state.setAlternatePortOutput(1, 0, true, timer2ClockOut)
+        }
+
         var tl = state.TL2.toInt()
         var th = state.TH2.toInt()
         var overflow = false
 
-        if (!ct2) {
-            tl = (tl + 1) and 0xFF
-        } else if (prevT2 && !t2Pin) {
-            tl = (tl + 1) and 0xFF
+        val event = !ct2 || (prevT2 && !t2Pin)
+        if (event) {
+            val up = !dcen || (p1 and 0x02) != 0
+            var count = (th shl 8) or tl
+            count = if (up) count + 1 else count - 1
+            overflow = if (up) count > 0xFFFF else count < 0
+            if (!overflow) {
+                th = (count shr 8) and 0xFF
+                tl = count and 0xFF
+            }
         }
 
-        if (tl == 0) {
-            th = (th + 1) and 0xFF
-            if (th == 0) overflow = true
-        }
-
-        if (overflow) {
+        if (event && overflow) {
             val rcaph = state.RCAP2H.toInt()
             val rcapl = state.RCAP2L.toInt()
 
@@ -190,11 +206,8 @@ class TimerController(private val state: CpuState) {
                 tl = rcapl
                 th = rcaph
             } else if (dcen) {
-                val up = (p1 and 0x02) != 0
-                if (up) {
-                    tl = rcapl
-                    th = rcaph
-                }
+                tl = rcapl
+                th = rcaph
                 setT2CONbit(TF2_BIT)
             } else if (!cprl2) {
                 setT2CONbit(TF2_BIT)
@@ -204,8 +217,9 @@ class TimerController(private val state: CpuState) {
                 setT2CONbit(TF2_BIT)
             }
 
-            if (t2oe) {
-                state.P1 = ((state.P1.toInt() xor 0x01) and 0xFF).toUByte()
+            if (t2oe && !isBaudGen) {
+                timer2ClockOut = !timer2ClockOut
+                state.setAlternatePortOutput(1, 0, true, timer2ClockOut)
             }
         }
 
@@ -241,5 +255,9 @@ class TimerController(private val state: CpuState) {
         prevT1 = false
         prevT2 = false
         prevT2EX = false
+        timer2ClockOut = false
+        state.setAlternatePortOutput(1, 0, false, false)
     }
+
+    private var timer2ClockOut: Boolean = false
 }

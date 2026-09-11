@@ -133,7 +133,7 @@ enum class Instruction(
     SJMP("SJMP", 2, 2, listOf(Operand.REL), OpcodePattern.Fixed(0x80)),
     AJMP("AJMP", 2, 2, listOf(Operand.ADDR11), OpcodePattern.PageRange(0x01)),
     LJMP("LJMP", 3, 2, listOf(Operand.ADDR16), OpcodePattern.Fixed(0x02)),
-    JMP_AT_A_DPTR("JMP", 1, 2, listOf(), OpcodePattern.Fixed(0x73)),
+    JMP_AT_A_DPTR("JMP", 1, 2, listOf(Operand.AT_A_DPTR), OpcodePattern.Fixed(0x73)),
 
     // ========================================================================
     // CONDITIONAL JUMPS: JC, JNC, JZ, JNZ, JB, JNB, JBC

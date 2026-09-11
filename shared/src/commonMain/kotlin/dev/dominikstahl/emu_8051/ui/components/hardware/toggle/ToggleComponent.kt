@@ -26,7 +26,7 @@ object ToggleFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig): HwComponent = ToggleComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "P3.0 Toggle", typeId, ports = listOf(Port.P3), pin = 0)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "P1.0 Toggle", typeId, ports = listOf(Port.P1), pin = 0)
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name}.${config.pin} Toggle"
 
@@ -38,7 +38,8 @@ object ToggleFactory : HwComponentFactory {
         onUserInput: (HwUserInput) -> Unit,
     ) {
         val portValue = portValues.firstOrNull() ?: 0
-        val on = (portValue and (1 shl config.pin)) != 0
+        // Standard trainer wiring connects the switch to ground; low means pressed.
+        val on = (portValue and (1 shl config.pin)) == 0
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 "${config.port.name}.${config.pin}",
