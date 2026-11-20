@@ -1,5 +1,6 @@
 package dev.dominikstahl.emu_8051.platform
 
+import kotlinx.cinterop.ExperimentalForeignApi
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
 import platform.UIKit.UIPasteboard
@@ -13,6 +14,7 @@ actual suspend fun pasteFromClipboard(): String? {
     return UIPasteboard.generalPasteboard.string
 }
 
+@OptIn(ExperimentalForeignApi::class)
 actual fun platformShare(text: String, title: String) {
     val activityVC = UIActivityViewController(
         activityItems = listOf(text),
