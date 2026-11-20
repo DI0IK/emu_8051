@@ -11,19 +11,17 @@ private class JvmBuzzerAudioPlayer : BuzzerAudioPlayer {
     private val sampleRate = 22050
     private val chunkSamples = 330 // ~15 ms
 
-    @Volatile private var targetFreq = 0.0
-    @Volatile private var isActive = false
+    @Volatile private var activeTones: List<BuzzerTone> = emptyList()
     @Volatile private var isMuted = false
     @Volatile private var closed = false
 
     private var workerThread: Thread? = null
     private val lock = Any()
 
-    override fun setTone(frequencyHz: Double, active: Boolean) {
+    override fun setTones(tones: List<BuzzerTone>) {
         if (closed) return
-        targetFreq = frequencyHz
-        isActive = active
-        if (active && !isMuted && workerThread == null) {
+        activeTones = tones
+        if (tones.isNotEmpty() && !isMuted && workerThread == null) {
             synchronized(lock) {
                 if (workerThread == null && !closed) {
                     workerThread = thread(isDaemon = true, name = "emu8051-buzzer") {
@@ -40,7 +38,7 @@ private class JvmBuzzerAudioPlayer : BuzzerAudioPlayer {
 
     override fun release() {
         closed = true
-        isActive = false
+        activeTones = emptyList()
         workerThread?.interrupt()
         workerThread = null
     }
@@ -55,13 +53,15 @@ private class JvmBuzzerAudioPlayer : BuzzerAudioPlayer {
                 open(format, chunkSamples * 4)
                 start()
             }
+            val samples = ShortArray(chunkSamples)
             val buf = ByteArray(chunkSamples * 2)
-            var phase = 0.0
+            val mixer = BuzzerPcmMixer()
             var silentChunks = 0
 
             while (!closed && !Thread.currentThread().isInterrupted) {
-                val activeNow = isActive && !isMuted && targetFreq > 0.0
-                if (!activeNow) {
+                val tonesNow = if (isMuted) emptyList() else activeTones
+                if (tonesNow.isEmpty()) {
+                    mixer.reset()
                     buf.fill(0)
                     line.write(buf, 0, buf.size)
                     silentChunks++
@@ -72,14 +72,11 @@ private class JvmBuzzerAudioPlayer : BuzzerAudioPlayer {
                     continue
                 }
                 silentChunks = 0
-                val freq = targetFreq.coerceIn(40.0, 12000.0)
-                val step = freq / sampleRate
+                mixer.renderSamples(samples, tonesNow, sampleRate)
                 for (i in 0 until chunkSamples) {
-                    phase += step
-                    if (phase >= 1.0) phase -= phase.toInt()
-                    val sample: Short = if (phase < 0.5) 2200 else -2200
-                    buf[i * 2] = (sample.toInt() and 0xFF).toByte()
-                    buf[i * 2 + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
+                    val sample = samples[i].toInt()
+                    buf[i * 2] = (sample and 0xFF).toByte()
+                    buf[i * 2 + 1] = ((sample shr 8) and 0xFF).toByte()
                 }
                 line.write(buf, 0, buf.size)
             }

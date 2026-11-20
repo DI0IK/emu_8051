@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.1 — 2026-11-20
+
+### Changed
+
+- **Polyphonic Buzzer Audio** — upgraded `BuzzerAudioPlayer` (`BuzzerPcmMixer` on JVM/Android, multi-voice Web Audio oscillators on JS/WasmJS) and `EmulatorViewModel.syncBuzzerAudio()` to mix multiple active, unmuted buzzers simultaneously with per-buzzer phase continuity
+
 ## v2.0.0 — 2026-11-20
 
 ### Added

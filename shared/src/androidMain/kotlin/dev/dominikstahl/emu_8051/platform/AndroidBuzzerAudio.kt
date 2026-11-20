@@ -10,19 +10,17 @@ private class AndroidBuzzerAudioPlayer : BuzzerAudioPlayer {
     private val sampleRate = 22050
     private val chunkSamples = 330
 
-    @Volatile private var targetFreq = 0.0
-    @Volatile private var isActive = false
+    @Volatile private var activeTones: List<BuzzerTone> = emptyList()
     @Volatile private var isMuted = false
     @Volatile private var closed = false
 
     private var workerThread: Thread? = null
     private val lock = Any()
 
-    override fun setTone(frequencyHz: Double, active: Boolean) {
+    override fun setTones(tones: List<BuzzerTone>) {
         if (closed) return
-        targetFreq = frequencyHz
-        isActive = active
-        if (active && !isMuted && workerThread == null) {
+        activeTones = tones
+        if (tones.isNotEmpty() && !isMuted && workerThread == null) {
             synchronized(lock) {
                 if (workerThread == null && !closed) {
                     workerThread = thread(isDaemon = true, name = "emu8051-buzzer") {
@@ -39,7 +37,7 @@ private class AndroidBuzzerAudioPlayer : BuzzerAudioPlayer {
 
     override fun release() {
         closed = true
-        isActive = false
+        activeTones = emptyList()
         workerThread?.interrupt()
         workerThread = null
     }
@@ -73,12 +71,13 @@ private class AndroidBuzzerAudioPlayer : BuzzerAudioPlayer {
             track.play()
 
             val buf = ShortArray(chunkSamples)
-            var phase = 0.0
+            val mixer = BuzzerPcmMixer()
             var silentChunks = 0
 
             while (!closed && !Thread.currentThread().isInterrupted) {
-                val activeNow = isActive && !isMuted && targetFreq > 0.0
-                if (!activeNow) {
+                val tonesNow = if (isMuted) emptyList() else activeTones
+                if (tonesNow.isEmpty()) {
+                    mixer.reset()
                     buf.fill(0)
                     track.write(buf, 0, buf.size)
                     silentChunks++
@@ -86,13 +85,7 @@ private class AndroidBuzzerAudioPlayer : BuzzerAudioPlayer {
                     continue
                 }
                 silentChunks = 0
-                val freq = targetFreq.coerceIn(40.0, 12000.0)
-                val step = freq / sampleRate
-                for (i in 0 until chunkSamples) {
-                    phase += step
-                    if (phase >= 1.0) phase -= phase.toInt()
-                    buf[i] = if (phase < 0.5) 2200 else -2200
-                }
+                mixer.renderSamples(buf, tonesNow, sampleRate)
                 track.write(buf, 0, buf.size)
             }
         } catch (_: Throwable) {

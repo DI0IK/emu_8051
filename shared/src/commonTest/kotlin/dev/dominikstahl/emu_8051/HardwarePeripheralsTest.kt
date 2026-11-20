@@ -4,6 +4,8 @@ package dev.dominikstahl.emu_8051
 
 import dev.dominikstahl.emu_8051.engine.REN_BIT
 import dev.dominikstahl.emu_8051.engine.RI_BIT
+import dev.dominikstahl.emu_8051.platform.BuzzerPcmMixer
+import dev.dominikstahl.emu_8051.platform.BuzzerTone
 import dev.dominikstahl.emu_8051.platform.FileFormat
 import dev.dominikstahl.emu_8051.ui.HwComponentConfig
 import dev.dominikstahl.emu_8051.ui.Port
@@ -147,6 +149,35 @@ class HardwarePeripheralsTest {
 
         buzzer.reset()
         assertFalse((buzzer.snapshot() as BuzzerSnapshot).on)
+    }
+
+    @Test
+    fun `BuzzerPcmMixer renders silence single tone and multiple simultaneous tones`() {
+        val mixer = BuzzerPcmMixer()
+        val buf = ShortArray(200)
+        val sampleRate = 22050
+
+        // Empty tones -> silence
+        buf.fill(123)
+        mixer.renderSamples(buf, emptyList(), sampleRate)
+        assertTrue(buf.all { it == 0.toShort() })
+
+        // Single tone -> +/-2200 square wave
+        mixer.renderSamples(buf, listOf(BuzzerTone("b1", 1000.0)), sampleRate)
+        assertTrue(buf.all { it == 2200.toShort() || it == (-2200).toShort() })
+        assertTrue(buf.any { it == 2200.toShort() } && buf.any { it == (-2200).toShort() })
+
+        // Two simultaneous tones -> scaled sum (constructs both in-phase and out-of-phase samples)
+        val twoToneBuf = ShortArray(400)
+        mixer.renderSamples(
+            twoToneBuf,
+            listOf(BuzzerTone("b1", 440.0), BuzzerTone("b2", 660.0)),
+            sampleRate,
+        )
+        // Out-of-phase samples cancel to 0; in-phase samples reach +/- ~3111 (never clipping)
+        assertTrue(twoToneBuf.any { it == 0.toShort() })
+        assertTrue(twoToneBuf.any { it > 2500 })
+        assertTrue(twoToneBuf.any { it < -2500 })
     }
 
     @Test

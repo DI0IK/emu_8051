@@ -9,6 +9,7 @@ import dev.dominikstahl.emu_8051.engine.REN_BIT
 import dev.dominikstahl.emu_8051.engine.RI_BIT
 import dev.dominikstahl.emu_8051.engine.TI_BIT
 import dev.dominikstahl.emu_8051.examples.BuiltinExample
+import dev.dominikstahl.emu_8051.platform.BuzzerTone
 import dev.dominikstahl.emu_8051.platform.FileFormat
 import dev.dominikstahl.emu_8051.platform.FileStorage
 import dev.dominikstahl.emu_8051.platform.copyToClipboard
@@ -201,24 +202,20 @@ class EmulatorViewModel(
 
     private fun syncBuzzerAudio(snapshots: Map<String, ComponentSnapshot>, isEmulating: Boolean) {
         if (!isEmulating) {
-            buzzerAudio.setTone(0.0, false)
+            buzzerAudio.setTones(emptyList())
             return
         }
-        var activeFreq = 0.0
-        var anyActive = false
-        for (snap in snapshots.values) {
-            if (snap is BuzzerSnapshot && snap.on && !snap.muted) {
-                anyActive = true
-                activeFreq = snap.frequencyHz.toDouble()
-                break
+        val activeTones = buildList {
+            for ((id, snap) in snapshots) {
+                if (snap is BuzzerSnapshot && snap.on && !snap.muted && snap.frequencyHz > 0) {
+                    add(BuzzerTone(id, snap.frequencyHz.toDouble()))
+                }
             }
         }
-        if (anyActive) {
+        if (activeTones.isNotEmpty()) {
             buzzerAudio.setMuted(false)
-            buzzerAudio.setTone(activeFreq, true)
-        } else {
-            buzzerAudio.setTone(0.0, false)
         }
+        buzzerAudio.setTones(activeTones)
     }
 
     private fun buildMemorySnapshotsLocked(): MemorySnapshots {
@@ -324,7 +321,7 @@ class EmulatorViewModel(
         val oldJob = runJob
         runJob = null
         oldJob?.cancelAndJoin()
-        buzzerAudio.setTone(0.0, false)
+        buzzerAudio.setTones(emptyList())
     }
 
     fun step() {
@@ -415,7 +412,7 @@ class EmulatorViewModel(
                     if (!reached) delay(1)
                 }
             } finally {
-                buzzerAudio.setTone(0.0, false)
+                buzzerAudio.setTones(emptyList())
                 _uiState.update { it.copy(isRunning = false, actualIps = 0) }
             }
         }
@@ -426,7 +423,7 @@ class EmulatorViewModel(
         runJob = null
         if (mode == SpeedMode.MANUAL) {
             oldJob?.cancel()
-            buzzerAudio.setTone(0.0, false)
+            buzzerAudio.setTones(emptyList())
             _uiState.update { it.copy(isRunning = false, speedMode = mode, actualIps = 0) }
             return
         }
@@ -568,7 +565,7 @@ class EmulatorViewModel(
                     }
                 }
             } finally {
-                buzzerAudio.setTone(0.0, false)
+                buzzerAudio.setTones(emptyList())
                 _uiState.update { it.copy(isRunning = false, actualIps = 0) }
             }
         }
@@ -578,7 +575,7 @@ class EmulatorViewModel(
         val job = runJob
         runJob = null
         job?.cancel()
-        buzzerAudio.setTone(0.0, false)
+        buzzerAudio.setTones(emptyList())
         _uiState.update { it.copy(isRunning = false, actualIps = 0) }
     }
 
