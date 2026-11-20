@@ -146,20 +146,24 @@ fun CpuState.movx_a_at_dptr(): Int {
 fun CpuState.movx_a_at_ri(ri: Int): Int {
     pc++
     val pointer = getRegister(ri)
-    ACC = xram[pointer.toInt()]
+    val addr = (P2.toInt() shl 8) or pointer.toInt()
+    ACC = xram[addr]
     return 2
 }
 
 fun CpuState.movx_at_dptr_a(): Int {
     pc++
     xram[DPTR] = ACC
+    xramDirty = true
     return 2
 }
 
 fun CpuState.movx_at_ri_a(ri: Int): Int {
     pc++
     val pointer = getRegister(ri)
-    xram[pointer.toInt()] = ACC
+    val addr = (P2.toInt() shl 8) or pointer.toInt()
+    xram[addr] = ACC
+    xramDirty = true
     return 2
 }
 

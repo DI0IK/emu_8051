@@ -18,14 +18,13 @@ fun CpuState.pushStack(value: UByte) {
 
 @OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.popStack(): UByte {
-    if (SP < 0x08u) return 0u
     val value = ram[SP.toInt()]
     SP = (SP - 1u).toUByte()
     return value
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
-fun CpuState.getBit(bitAddress: UByte): Boolean {
+fun CpuState.getBit(bitAddress: UByte, readSfrLatch: Boolean = false): Boolean {
     val addr = bitAddress.toInt()
     return if (addr < 0x80) {
         val byteAddr = 0x20 + (addr / 8)
@@ -34,9 +33,12 @@ fun CpuState.getBit(bitAddress: UByte): Boolean {
     } else {
         val byteAddr = (addr and 0xF8).toUByte()
         val bitPos = addr and 0x07
-        ((readPin(byteAddr).toInt() shr bitPos) and 0x01) != 0
+        val byteVal = if (readSfrLatch) readDirect(byteAddr) else readPin(byteAddr)
+        ((byteVal.toInt() shr bitPos) and 0x01) != 0
     }
 }
+
+fun CpuState.getBitLatch(bitAddress: UByte): Boolean = getBit(bitAddress, readSfrLatch = true)
 
 @OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.setBit(bitAddress: UByte, value: Boolean) {

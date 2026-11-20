@@ -2,7 +2,6 @@
 
 package dev.dominikstahl.emu_8051.engine
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.sjmp(): Int {
     pc++
     val relOffset = rom[pc].toByte().toInt()
@@ -11,7 +10,6 @@ fun CpuState.sjmp(): Int {
     return 2
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.ajmp(rawOpcode: Int): Int {
     pc++
     val addrLow = rom[pc].toInt()
@@ -23,11 +21,10 @@ fun CpuState.ajmp(rawOpcode: Int): Int {
     return 2
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.ljmp(): Int {
     pc++
     val addrHigh = rom[pc].toInt()
-    val addrLow = rom[pc + 1].toInt()
+    val addrLow = rom[(pc + 1) and 0xFFFF].toInt()
     pc = (addrHigh shl 8) or addrLow
     return 2
 }
@@ -90,35 +87,32 @@ fun CpuState.jbc(): Int {
     pc++
     val bitAddr = rom[pc++]
     val relOffset = rom[pc++].toByte().toInt()
-    if (getBit(bitAddr)) {
+    if (getBitLatch(bitAddr)) {
         setBit(bitAddr, false)
         pc = (pc + relOffset) and 0xFFFF
     }
     return 2
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
+private fun CpuState.cjneCore(destValue: Int, srcValue: Int): Int {
+    val relOffset = rom[pc++].toByte().toInt()
+    setFlag(CY_BIT, destValue < srcValue)
+    if (destValue != srcValue) pc = (pc + relOffset) and 0xFFFF
+    return 2
+}
+
 fun CpuState.cjne_a_imm(): Int {
     pc++
     val destValue = ACC.toInt()
     val srcValue = rom[pc++].toInt()
-    val relOffset = rom[pc++].toByte().toInt()
-    val nextInstructionAddr = pc
-    setFlag(CY_BIT, destValue < srcValue)
-    if (destValue != srcValue) pc = (nextInstructionAddr + relOffset) and 0xFFFF
-    return 2
+    return cjneCore(destValue, srcValue)
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.cjne_a_direct(): Int {
     pc++
     val destValue = ACC.toInt()
     val srcValue = readPin(rom[pc++]).toInt()
-    val relOffset = rom[pc++].toByte().toInt()
-    val nextInstructionAddr = pc
-    setFlag(CY_BIT, destValue < srcValue)
-    if (destValue != srcValue) pc = (nextInstructionAddr + relOffset) and 0xFFFF
-    return 2
+    return cjneCore(destValue, srcValue)
 }
 
 fun CpuState.cjne_ri_imm(ri: Int): Int {
@@ -126,22 +120,14 @@ fun CpuState.cjne_ri_imm(ri: Int): Int {
     val pointer = getRegister(ri)
     val destValue = readIndirect(pointer).toInt()
     val srcValue = rom[pc++].toInt()
-    val relOffset = rom[pc++].toByte().toInt()
-    val nextInstructionAddr = pc
-    setFlag(CY_BIT, destValue < srcValue)
-    if (destValue != srcValue) pc = (nextInstructionAddr + relOffset) and 0xFFFF
-    return 2
+    return cjneCore(destValue, srcValue)
 }
 
 fun CpuState.cjne_rn_imm(rn: Int): Int {
     pc++
     val destValue = getRegister(rn).toInt()
     val srcValue = rom[pc++].toInt()
-    val relOffset = rom[pc++].toByte().toInt()
-    val nextInstructionAddr = pc
-    setFlag(CY_BIT, destValue < srcValue)
-    if (destValue != srcValue) pc = (nextInstructionAddr + relOffset) and 0xFFFF
-    return 2
+    return cjneCore(destValue, srcValue)
 }
 
 fun CpuState.djnz_direct(): Int {
@@ -165,7 +151,6 @@ fun CpuState.djnz_rn(rn: Int): Int {
     return 2
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.acall(rawOpcode: Int): Int {
     pc++
     val addrLow = rom[pc].toInt()
@@ -180,9 +165,8 @@ fun CpuState.acall(rawOpcode: Int): Int {
     return 2
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.lcall(): Int {
-    val returnAddr = pc + 3
+    val returnAddr = (pc + 3) and 0xFFFF
     pc++
     val addrHigh = rom[pc++].toInt()
     val addrLow = rom[pc].toInt()

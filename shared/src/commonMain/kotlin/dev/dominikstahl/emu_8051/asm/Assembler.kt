@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalUnsignedTypes::class)
+
 package dev.dominikstahl.emu_8051.asm
 
 fun assemble(source: String): AssemblyResult {

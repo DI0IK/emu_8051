@@ -30,7 +30,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.event_name != 'push' }}
-      - run: ./gradlew :shared:jvmTest :shared:compileKotlinWasmJs
+      - run: ./gradlew :shared:jvmTest :shared:compileKotlinWasmJs :shared:compileKotlinJs :shared:testAndroidHostTest
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -192,7 +192,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.event_name != 'push' }}
-      - run: ./gradlew :webApp:wasmJsBrowserDistribution :webApp:jsBrowserDistribution
+      - run: ./gradlew :webApp:wasmJsBrowserDistribution
       - uses: peaceiris/actions-gh-pages@v4
         if: github.event_name != 'pull_request'
         with:

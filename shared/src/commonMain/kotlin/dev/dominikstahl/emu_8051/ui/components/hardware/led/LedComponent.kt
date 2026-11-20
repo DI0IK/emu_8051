@@ -14,9 +14,10 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.ComponentSnapshot
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponent
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponentFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwUserInput
-import dev.dominikstahl.emu_8051.ui.components.hardware.UnitSnapshot
 import dev.dominikstahl.emu_8051.ui.components.hardware.PinField
+import dev.dominikstahl.emu_8051.ui.components.hardware.PolarityField
 import dev.dominikstahl.emu_8051.ui.components.hardware.PortField
+import dev.dominikstahl.emu_8051.ui.components.hardware.UnitSnapshot
 
 class LedComponent(config: HwComponentConfig) : HwComponent(config) {
     override fun snapshot(): ComponentSnapshot = UnitSnapshot
@@ -32,6 +33,8 @@ object LedFactory : HwComponentFactory {
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name}.${config.pin} LED"
 
+    override fun usedPins(config: HwComponentConfig) = listOf(config.port to config.pin)
+
     @Composable
     override fun Render(
         config: HwComponentConfig,
@@ -40,7 +43,8 @@ object LedFactory : HwComponentFactory {
         onUserInput: (HwUserInput) -> Unit,
     ) {
         val portValue = portValues.firstOrNull() ?: 0
-        val on = (portValue and (1 shl config.pin)) != 0
+        val bitHigh = (portValue and (1 shl config.pin)) != 0
+        val on = if (config.activeLow) !bitHigh else bitHigh
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             LedIndicator(on = on, color = Color(0xFFFF4444))
             Text(
@@ -63,5 +67,6 @@ object LedFactory : HwComponentFactory {
         PinField(config) { newPin ->
             onUpdateComponent(config.id) { it.copy(pin = newPin) }
         }
+        PolarityField(config, onUpdateComponent)
     }
 }

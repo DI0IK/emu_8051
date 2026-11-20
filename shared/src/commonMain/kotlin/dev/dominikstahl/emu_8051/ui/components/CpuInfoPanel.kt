@@ -7,27 +7,28 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.dominikstahl.emu_8051.ui.EmulatorUiState
 
 private enum class CpuTab { REGS, TIMERS, INT, SERIAL }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CpuInfoPanel(
     state: EmulatorUiState,
@@ -42,7 +43,7 @@ fun CpuInfoPanel(
         tonalElevation = 1.dp,
     ) {
         Column {
-            TabRow(selectedTabIndex = tab.ordinal) {
+            PrimaryTabRow(selectedTabIndex = tab.ordinal) {
                 CpuTab.entries.forEach { t ->
                     Tab(
                         selected = tab == t,
@@ -83,9 +84,30 @@ private fun RegsContent(state: EmulatorUiState) {
     RegRow("ACC", hex(state.acc))
     RegRow("B", hex(state.b))
     RegRow("SP", hex(state.sp))
-    RegRow("DPL", hex(state.dpl))
-    RegRow("DPH", hex(state.dph))
     RegRow("DPTR", hex((state.dph shl 8) or state.dpl, 4))
+    HorizontalDivider()
+    val bank = (state.psw shr 3) and 0x03
+    SectionHeader("Registers (Bank $bank)")
+    val regs = state.activeRegisters
+    for (row in 0..3) {
+        val leftIdx = row * 2
+        val rightIdx = row * 2 + 1
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "R$leftIdx: ${hex(regs.getOrElse(leftIdx) { 0 })}",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(
+                "R$rightIdx: ${hex(regs.getOrElse(rightIdx) { 0 })}",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+    }
     HorizontalDivider()
     RegRow("P0", hex(state.p0))
     RegRow("P1", hex(state.p1))
@@ -101,54 +123,51 @@ private fun RegsContent(state: EmulatorUiState) {
 
 @Composable
 private fun TimersContent(state: EmulatorUiState) {
-    SectionHeader("Timer 0")
-    RegRow("TMOD", hex(state.tmod))
-    RegRow("TCON", hex(state.tcon))
-    RegRow("TH0", hex(state.th0))
-    RegRow("TL0", hex(state.tl0))
-    Reg16Row("T0 count", (state.th0 shl 8) or state.tl0)
-    HorizontalDivider()
     val tmod = state.tmod
+    val tcon = state.tcon
     val gate0 = (tmod and 0x08) != 0
     val ct0 = (tmod and 0x04) != 0
-    val m10 = (tmod and 0x02) != 0
-    val m00 = (tmod and 0x01) != 0
-    val mode0 = (if (m10) 2 else 0) or (if (m00) 1 else 0)
+    val mode0 = tmod and 0x03
+
+    SectionHeader("Timer 0")
+    RegRow("TMOD", hex(tmod))
+    RegRow("TCON", hex(tcon))
+    RegRow("TH0 / TL0", "${hex(state.th0)} / ${hex(state.tl0)}")
+    when (mode0) {
+        0 -> Reg16Row("T0 (13-bit)", (state.th0 shl 5) or (state.tl0 and 0x1F))
+        3 -> RegRow("T0 (split)", "TH0=${hex(state.th0)}, TL0=${hex(state.tl0)}")
+        else -> Reg16Row("T0 count", (state.th0 shl 8) or state.tl0)
+    }
     RegRow("Mode", "$mode0 (${timerModeName(mode0)})")
-    RegRow("Gate0", if (gate0) "INT1" else "TR0")
+    RegRow("Gate0", if (gate0) "INT0 (P3.2)" else "TR0")
     RegRow("C/T0", if (ct0) "Counter" else "Timer")
-    val tcon = state.tcon
-    RegRow("TR0", if ((tcon and 0x10) != 0) "1" else "0")
-    RegRow("TF0", if ((tcon and 0x20) != 0) "1" else "0")
+    RegRow("TR0 / TF0", "${if ((tcon and 0x10) != 0) 1 else 0} / ${if ((tcon and 0x20) != 0) 1 else 0}")
 
     HorizontalDivider()
     SectionHeader("Timer 1")
-    RegRow("TH1", hex(state.th1))
-    RegRow("TL1", hex(state.tl1))
-    Reg16Row("T1 count", (state.th1 shl 8) or state.tl1)
     val gate1 = (tmod and 0x80) != 0
     val ct1 = (tmod and 0x40) != 0
-    val m11 = (tmod and 0x20) != 0
-    val m01 = (tmod and 0x10) != 0
-    val mode1 = (if (m11) 2 else 0) or (if (m01) 1 else 0)
+    val mode1 = (tmod shr 4) and 0x03
+    RegRow("TH1 / TL1", "${hex(state.th1)} / ${hex(state.tl1)}")
+    when (mode1) {
+        0 -> Reg16Row("T1 (13-bit)", (state.th1 shl 5) or (state.tl1 and 0x1F))
+        else -> Reg16Row("T1 count", (state.th1 shl 8) or state.tl1)
+    }
     RegRow("Mode", "$mode1 (${timerModeName(mode1)})")
-    RegRow("Gate1", if (gate1) "INT1" else "TR1")
+    RegRow("Gate1", if (gate1) "INT1 (P3.3)" else "TR1")
     RegRow("C/T1", if (ct1) "Counter" else "Timer")
-    RegRow("TR1", if ((tcon and 0x40) != 0) "1" else "0")
-    RegRow("TF1", if ((tcon and 0x80) != 0) "1" else "0")
+    RegRow("TR1 / TF1", "${if ((tcon and 0x40) != 0) 1 else 0} / ${if ((tcon and 0x80) != 0) 1 else 0}")
 
     HorizontalDivider()
     SectionHeader("Timer 2")
-    RegRow("T2CON", hex(state.t2con))
-    RegRow("TH2", hex(state.th2))
-    RegRow("TL2", hex(state.tl2))
-    RegRow("RCAP2H", hex(state.rcap2h))
-    RegRow("RCAP2L", hex(state.rcap2l))
     val t2con = state.t2con
-    RegRow("TR2", if ((t2con and 0x04) != 0) "1" else "0")
-    RegRow("EXEN2", if ((t2con and 0x08) != 0) "1" else "0")
-    RegRow("CP/RL2", if ((t2con and 0x01) != 0) "Capture" else "Reload")
-    RegRow("C/T2", if ((t2con and 0x02) != 0) "Counter" else "Timer")
+    RegRow("T2CON", hex(t2con))
+    RegRow("TH2 / TL2", "${hex(state.th2)} / ${hex(state.tl2)}")
+    RegRow("RCAP2", hex((state.rcap2h shl 8) or state.rcap2l, 4))
+    RegRow("TR2 / C/T2", "${if ((t2con and 0x04) != 0) 1 else 0} / ${if ((t2con and 0x02) != 0) "Counter" else "Timer"}")
+    RegRow("TF2 / EXF2", "${if ((t2con and 0x80) != 0) 1 else 0} / ${if ((t2con and 0x40) != 0) 1 else 0}")
+    RegRow("RCLK / TCLK", "${if ((t2con and 0x20) != 0) 1 else 0} / ${if ((t2con and 0x10) != 0) 1 else 0}")
+    RegRow("EXEN2 / CP_RL2", "${if ((t2con and 0x08) != 0) 1 else 0} / ${if ((t2con and 0x01) != 0) "Capture" else "Reload"}")
 }
 
 @Composable
@@ -174,12 +193,12 @@ private fun IntContent(state: EmulatorUiState) {
     RegRow("PX0", if ((ip and 0x01) != 0) "High" else "Low")
 
     HorizontalDivider()
-    SectionHeader("TCON flags")
+    SectionHeader("TCON external flags")
     val tcon = state.tcon
-    RegRow("IE0 (Ext 0)", if ((tcon and 0x01) != 0) "1" else "0")
-    RegRow("IE1 (Ext 1)", if ((tcon and 0x04) != 0) "1" else "0")
-    RegRow("IT0", if ((tcon and 0x02) != 0) "Edge" else "Level")
-    RegRow("IT1", if ((tcon and 0x08) != 0) "Edge" else "Level")
+    RegRow("IE0 (Ext 0 flag)", if ((tcon and 0x02) != 0) "1" else "0")
+    RegRow("IT0 (Ext 0 mode)", if ((tcon and 0x01) != 0) "Edge" else "Level")
+    RegRow("IE1 (Ext 1 flag)", if ((tcon and 0x08) != 0) "1" else "0")
+    RegRow("IT1 (Ext 1 mode)", if ((tcon and 0x04) != 0) "Edge" else "Level")
 }
 
 @Composable
@@ -192,13 +211,12 @@ private fun SerialContent(state: EmulatorUiState) {
     RegRow("Mode", "$mode (${serialModeName(mode)})")
     RegRow("SM2", if ((scon and 0x20) != 0) "1" else "0")
     RegRow("REN", if ((scon and 0x10) != 0) "1 (recv)" else "0 (no recv)")
-    RegRow("TB8", if ((scon and 0x08) != 0) "1" else "0")
-    RegRow("RB8", if ((scon and 0x04) != 0) "1" else "0")
-    RegRow("TI", if ((scon and 0x02) != 0) "1" else "0")
-    RegRow("RI", if ((scon and 0x01) != 0) "1" else "0")
+    RegRow("TB8 / RB8", "${if ((scon and 0x08) != 0) 1 else 0} / ${if ((scon and 0x04) != 0) 1 else 0}")
+    RegRow("TI / RI", "${if ((scon and 0x02) != 0) 1 else 0} / ${if ((scon and 0x01) != 0) 1 else 0}")
 
     HorizontalDivider()
-    RegRow("SBUF", hex(state.sbuf))
+    RegRow("SBUF (RX)", hex(state.sbuf))
+    RegRow("SBUF (TX)", hex(state.sbufTx))
 
     HorizontalDivider()
     SectionHeader("Power")
@@ -213,7 +231,7 @@ private fun RegRow(label: String, value: String) {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.labelSmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+        Text(value, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
     }
 }
 

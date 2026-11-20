@@ -1,0 +1,10 @@
+inputs:
+  android-nixpkgs:
+    url: github:tadfisher/android-nixpkgs
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+  nixpkgs:
+    url: github:NixOS/nixpkgs/nixpkgs-unstable
+nixpkgs:
+  allow_unfree: true

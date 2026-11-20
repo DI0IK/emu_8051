@@ -1,16 +1,15 @@
 ; Read toggle switch on P1.0, toggle LED on P1.7
-; Default config: P1.7 LED, P1.0 Toggle Switch
-; wiring: toggle between P1.0 and GND (internal pull-up)
+; Default config: P1.7 LED, P1.0 Toggle Switch (active HIGH)
+; wiring: Toggle Switch drives P1.0 (0=OFF, 1=ON), LED on P1.7
 
         ORG 0000h
         LJMP MAIN
 
-MAIN:   MOV SP, #2Fh
-        MOV P1, #0FFh         ; enable pull-ups on all P1 pins
-        SETB P1.7            ; LED off initially
+MAIN:   MOV SP, #5Fh
+        MOV P1, #00h          ; LED off initially
         SJMP LOOP
 
-LOOP:   JB P1.0, LOOP       ; wait for button press (active low)
+LOOP:   JNB P1.0, LOOP        ; wait for switch ON (active HIGH)
 
         ; debounce: wait ~20ms
         MOV R0, #14h
@@ -19,7 +18,7 @@ DEBOUNCE_DELAY:
         DJNZ R1, $
         DJNZ R0, DEBOUNCE_DELAY
 
-        ; wait for release
-        JNB P1.0, $
-        CPL P1.7             ; toggle LED
+        ; wait for switch OFF
+        JB P1.0, $
+        CPL P1.7              ; toggle LED
         SJMP LOOP

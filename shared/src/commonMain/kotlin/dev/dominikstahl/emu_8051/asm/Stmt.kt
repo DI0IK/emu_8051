@@ -1,17 +1,17 @@
 package dev.dominikstahl.emu_8051.asm
 
 sealed class Stmt {
-    data class Org(val expr: Expr) : Stmt()
-    data object End : Stmt()
-    data class Equ(val symbol: String, val expr: Expr) : Stmt()
-    data class Data(val symbol: String, val expr: Expr) : Stmt()
-    data class Bit(val symbol: String, val expr: Expr) : Stmt()
-    data class Code(val symbol: String, val expr: Expr) : Stmt()
-    data class Db(val values: List<DbItem>, val label: String? = null) : Stmt()
-    data class Dw(val values: List<Expr>, val label: String? = null) : Stmt()
-    data class Ds(val count: Expr, val label: String? = null) : Stmt()
+    data class Org(val expr: Expr, val line: Int) : Stmt()
+    data class End(val line: Int) : Stmt()
+    data class Equ(val symbol: String, val expr: Expr, val line: Int) : Stmt()
+    data class Data(val symbol: String, val expr: Expr, val line: Int) : Stmt()
+    data class Bit(val symbol: String, val expr: Expr, val line: Int) : Stmt()
+    data class Code(val symbol: String, val expr: Expr, val line: Int) : Stmt()
+    data class Db(val values: List<DbItem>, val label: String? = null, val line: Int) : Stmt()
+    data class Dw(val values: List<Expr>, val label: String? = null, val line: Int) : Stmt()
+    data class Ds(val count: Expr, val label: String? = null, val line: Int) : Stmt()
     data class Instruction(val label: String?, val mnemonic: String, val operands: List<Expr>, val line: Int) : Stmt()
-    data class Label(val name: String) : Stmt()
+    data class Label(val name: String, val line: Int) : Stmt()
     data object Blank : Stmt()
     data class ErrorMsg(val message: String, val line: Int) : Stmt()
 }
@@ -19,6 +19,25 @@ sealed class Stmt {
 sealed class DbItem {
     data class ExprValue(val expr: Expr) : DbItem()
     data class StringValue(val string: String) : DbItem()
+}
+
+private fun isEndOfLine(type: TokenType): Boolean =
+    type == TokenType.NEWLINE || type == TokenType.EOF
+
+private fun skipToEndOfLine(tokens: List<Token>, start: Int): Int {
+    var pos = start
+    while (pos < tokens.size && !isEndOfLine(tokens[pos].type)) pos++
+    return pos
+}
+
+private fun isSymbolDefineDirective(type: TokenType): Boolean = when (type) {
+    TokenType.EQU, TokenType.DATA, TokenType.BIT, TokenType.CODE -> true
+    else -> false
+}
+
+private fun isDataDirective(type: TokenType): Boolean = when (type) {
+    TokenType.DB, TokenType.DW, TokenType.DS -> true
+    else -> false
 }
 
 fun parseStatements(tokens: List<Token>): List<Stmt> {
@@ -29,12 +48,9 @@ fun parseStatements(tokens: List<Token>): List<Stmt> {
         while (pos < tokens.size && tokens[pos].type == TokenType.NEWLINE) pos++
         if (pos >= tokens.size || tokens[pos].type == TokenType.EOF) break
 
-        val stmt: Stmt
         val result = parseLine(tokens, pos)
-        stmt = result.value
+        stmts.add(result.value)
         pos = result.nextIndex
-
-        stmts.add(stmt)
     }
     return stmts
 }
@@ -48,148 +64,216 @@ fun parseLine(tokens: List<Token>, start: Int): ParseResult<Stmt> {
     }
 
     var label: String? = null
+    var labelLine = tokens[pos].line
     if (pos + 1 < tokens.size &&
         tokens[pos].type == TokenType.SYMBOL &&
         tokens[pos + 1].type == TokenType.COLON
     ) {
         label = tokens[pos].text
+        labelLine = tokens[pos].line
         pos += 2
     }
 
-    while (pos < tokens.size && tokens[pos].type == TokenType.NEWLINE) {
-        if (label != null) return ParseResult(Stmt.Label(label), pos)
-        pos++
-    }
-    if (pos >= tokens.size || tokens[pos].type == TokenType.EOF) {
-        return ParseResult(if (label != null) Stmt.Label(label) else Stmt.Blank, pos)
+    if (pos >= tokens.size || isEndOfLine(tokens[pos].type)) {
+        return ParseResult(if (label != null) Stmt.Label(label, labelLine) else Stmt.Blank, pos)
     }
 
-    val stmt: Stmt
+    if (tokens[pos].type == TokenType.ERROR) {
+        val tok = tokens[pos]
+        return ParseResult(Stmt.ErrorMsg(tok.text, tok.line), skipToEndOfLine(tokens, pos))
+    }
 
-    if (tokens[pos].type == TokenType.SYMBOL && pos + 1 < tokens.size &&
-        tokens[pos + 1].type in listOf(TokenType.EQU, TokenType.DATA, TokenType.BIT, TokenType.CODE)
-    ) {
-        val symbolName = tokens[pos].text
-        val directiveType = tokens[pos + 1].type
-        val lineNum = tokens[pos].line
-        pos += 2
-        val (expr, newPos) = parseExpr(tokens, pos)
-        stmt = when (directiveType) {
-            TokenType.EQU -> Stmt.Equ(symbolName, expr)
-            TokenType.DATA -> Stmt.Data(symbolName, expr)
-            TokenType.BIT -> Stmt.Bit(symbolName, expr)
-            TokenType.CODE -> Stmt.Code(symbolName, expr)
-            else -> Stmt.ErrorMsg("Unknown directive", lineNum)
-        }
-        pos = newPos
-    } else when (tokens[pos].type) {
-        TokenType.END -> { stmt = Stmt.End; pos++ }
-        TokenType.ORG -> {
-            pos++
-            val (expr, newPos) = parseExpr(tokens, pos)
-            stmt = Stmt.Org(expr); pos = newPos
-        }
-        TokenType.EQU -> {
-            val symbol = label ?: return ParseResult(
-                Stmt.ErrorMsg("EQU without symbol", tokens[pos].line), pos + 1
-            )
-            label = null
-            pos++
-            val (expr, newPos) = parseExpr(tokens, pos)
-            stmt = Stmt.Equ(symbol, expr); pos = newPos
-        }
-        TokenType.DATA -> {
-            val symbol = label ?: return ParseResult(
-                Stmt.ErrorMsg("DATA without symbol", tokens[pos].line), pos + 1
-            )
-            label = null
-            pos++
-            val (expr, newPos) = parseExpr(tokens, pos)
-            stmt = Stmt.Data(symbol, expr); pos = newPos
-        }
-        TokenType.BIT -> {
-            val symbol = label ?: return ParseResult(
-                Stmt.ErrorMsg("BIT without symbol", tokens[pos].line), pos + 1
-            )
-            label = null
-            pos++
-            val (expr, newPos) = parseExpr(tokens, pos)
-            stmt = Stmt.Bit(symbol, expr); pos = newPos
-        }
-        TokenType.CODE -> {
-            val symbol = label ?: return ParseResult(
-                Stmt.ErrorMsg("CODE without symbol", tokens[pos].line), pos + 1
-            )
-            label = null
-            pos++
-            val (expr, newPos) = parseExpr(tokens, pos)
-            stmt = Stmt.Code(symbol, expr); pos = newPos
-        }
-        TokenType.DB -> {
-            pos++
-            val items = mutableListOf<DbItem>()
-            while (pos < tokens.size && tokens[pos].type !in listOf(TokenType.NEWLINE, TokenType.EOF)) {
-                when (tokens[pos].type) {
-                    TokenType.STRING -> {
-                        items.add(DbItem.StringValue(tokens[pos].text))
-                        pos++
+    // Label without colon before EQU/DATA/BIT/CODE or DB/DW/DS
+    if (label == null && tokens[pos].type == TokenType.SYMBOL && pos + 1 < tokens.size) {
+        val nextType = tokens[pos + 1].type
+        if (isSymbolDefineDirective(nextType)) {
+            val symbolName = tokens[pos].text
+            val lineNum = tokens[pos].line
+            pos += 2
+            return try {
+                val (expr, newPos) = parseExpr(tokens, pos)
+                if (newPos < tokens.size && !isEndOfLine(tokens[newPos].type)) {
+                    ParseResult(
+                        Stmt.ErrorMsg("Unexpected token '${tokens[newPos].text}'", tokens[newPos].line),
+                        skipToEndOfLine(tokens, newPos),
+                    )
+                } else {
+                    val stmt = when (nextType) {
+                        TokenType.EQU -> Stmt.Equ(symbolName, expr, lineNum)
+                        TokenType.DATA -> Stmt.Data(symbolName, expr, lineNum)
+                        TokenType.BIT -> Stmt.Bit(symbolName, expr, lineNum)
+                        TokenType.CODE -> Stmt.Code(symbolName, expr, lineNum)
+                        else -> Stmt.ErrorMsg("Unknown directive", lineNum)
                     }
-                    TokenType.COMMA -> pos++
-                    else -> {
-                        val (expr, newPos) = parseExpr(tokens, pos)
-                        items.add(DbItem.ExprValue(expr)); pos = newPos
-                    }
+                    ParseResult(stmt, newPos)
+                }
+            } catch (e: AssemblerException) {
+                ParseResult(Stmt.ErrorMsg(e.message ?: "Syntax error", lineNum), skipToEndOfLine(tokens, pos))
+            }
+        } else if (isDataDirective(nextType)) {
+            label = tokens[pos].text
+            labelLine = tokens[pos].line
+            pos++
+        }
+    }
+
+    val curTok = tokens[pos]
+    val lineNum = curTok.line
+
+    return try {
+        when (curTok.type) {
+            TokenType.END -> {
+                val nextPos = pos + 1
+                if (nextPos < tokens.size && !isEndOfLine(tokens[nextPos].type)) {
+                    ParseResult(
+                        Stmt.ErrorMsg("Unexpected token '${tokens[nextPos].text}' after END", tokens[nextPos].line),
+                        skipToEndOfLine(tokens, nextPos),
+                    )
+                } else {
+                    ParseResult(Stmt.End(lineNum), nextPos)
                 }
             }
-            stmt = Stmt.Db(items, label)
-        }
-        TokenType.DW -> {
-            pos++
-            val values = mutableListOf<Expr>()
-            while (pos < tokens.size && tokens[pos].type !in listOf(TokenType.NEWLINE, TokenType.EOF)) {
-                when (tokens[pos].type) {
-                    TokenType.COMMA -> pos++
-                    TokenType.STRING -> {
-                        val s = tokens[pos].text
-                        for (ch in s) {
-                            values.add(Expr.Number(ch.code))
+            TokenType.ORG -> {
+                pos++
+                val (expr, newPos) = parseExpr(tokens, pos)
+                if (newPos < tokens.size && !isEndOfLine(tokens[newPos].type)) {
+                    ParseResult(
+                        Stmt.ErrorMsg("Unexpected token '${tokens[newPos].text}'", tokens[newPos].line),
+                        skipToEndOfLine(tokens, newPos),
+                    )
+                } else {
+                    ParseResult(Stmt.Org(expr, lineNum), newPos)
+                }
+            }
+            TokenType.EQU, TokenType.DATA, TokenType.BIT, TokenType.CODE -> {
+                val symbol = label ?: return ParseResult(
+                    Stmt.ErrorMsg("${curTok.type.name} without symbol", lineNum),
+                    skipToEndOfLine(tokens, pos + 1),
+                )
+                pos++
+                val (expr, newPos) = parseExpr(tokens, pos)
+                if (newPos < tokens.size && !isEndOfLine(tokens[newPos].type)) {
+                    ParseResult(
+                        Stmt.ErrorMsg("Unexpected token '${tokens[newPos].text}'", tokens[newPos].line),
+                        skipToEndOfLine(tokens, newPos),
+                    )
+                } else {
+                    val stmt = when (curTok.type) {
+                        TokenType.EQU -> Stmt.Equ(symbol, expr, lineNum)
+                        TokenType.DATA -> Stmt.Data(symbol, expr, lineNum)
+                        TokenType.BIT -> Stmt.Bit(symbol, expr, lineNum)
+                        else -> Stmt.Code(symbol, expr, lineNum)
+                    }
+                    ParseResult(stmt, newPos)
+                }
+            }
+            TokenType.DB -> {
+                pos++
+                val items = mutableListOf<DbItem>()
+                if (pos >= tokens.size || isEndOfLine(tokens[pos].type)) {
+                    return ParseResult(Stmt.ErrorMsg("DB expects at least one value", lineNum), pos)
+                }
+                while (true) {
+                    val tok = tokens.getOrNull(pos) ?: throw AssemblerException("Expected value after ','")
+                    if (isEndOfLine(tok.type)) throw AssemblerException("Expected value after ','")
+                    if (tok.type == TokenType.STRING) {
+                        val nextType = tokens.getOrNull(pos + 1)?.type
+                        if (tok.text.length != 1 || nextType == null || nextType == TokenType.COMMA || isEndOfLine(nextType)) {
+                            items.add(DbItem.StringValue(tok.text))
+                            pos++
+                        } else {
+                            val (expr, newPos) = parseExpr(tokens, pos)
+                            items.add(DbItem.ExprValue(expr))
+                            pos = newPos
+                        }
+                    } else {
+                        val (expr, newPos) = parseExpr(tokens, pos)
+                        items.add(DbItem.ExprValue(expr))
+                        pos = newPos
+                    }
+                    if (pos >= tokens.size || isEndOfLine(tokens[pos].type)) break
+                    if (tokens[pos].type != TokenType.COMMA) {
+                        throw AssemblerException("Expected ',' between DB values")
+                    }
+                    pos++
+                }
+                ParseResult(Stmt.Db(items, label, lineNum), pos)
+            }
+            TokenType.DW -> {
+                pos++
+                val values = mutableListOf<Expr>()
+                if (pos >= tokens.size || isEndOfLine(tokens[pos].type)) {
+                    return ParseResult(Stmt.ErrorMsg("DW expects at least one value", lineNum), pos)
+                }
+                while (true) {
+                    val tok = tokens.getOrNull(pos) ?: throw AssemblerException("Expected value after ','")
+                    if (isEndOfLine(tok.type)) throw AssemblerException("Expected value after ','")
+                    if (tok.type == TokenType.STRING) {
+                        val nextType = tokens.getOrNull(pos + 1)?.type
+                        if (tok.text.length != 1 || nextType == null || nextType == TokenType.COMMA || isEndOfLine(nextType)) {
+                            for (ch in tok.text) {
+                                values.add(Expr.Number(ch.code))
+                            }
+                            pos++
+                        } else {
+                            val (expr, newPos) = parseExpr(tokens, pos)
+                            values.add(expr)
+                            pos = newPos
+                        }
+                    } else {
+                        val (expr, newPos) = parseExpr(tokens, pos)
+                        values.add(expr)
+                        pos = newPos
+                    }
+                    if (pos >= tokens.size || isEndOfLine(tokens[pos].type)) break
+                    if (tokens[pos].type != TokenType.COMMA) {
+                        throw AssemblerException("Expected ',' between DW values")
+                    }
+                    pos++
+                }
+                ParseResult(Stmt.Dw(values, label, lineNum), pos)
+            }
+            TokenType.DS -> {
+                pos++
+                val (expr, newPos) = parseExpr(tokens, pos)
+                if (newPos < tokens.size && !isEndOfLine(tokens[newPos].type)) {
+                    ParseResult(
+                        Stmt.ErrorMsg("Unexpected token '${tokens[newPos].text}'", tokens[newPos].line),
+                        skipToEndOfLine(tokens, newPos),
+                    )
+                } else {
+                    ParseResult(Stmt.Ds(expr, label, lineNum), newPos)
+                }
+            }
+            TokenType.SYMBOL -> {
+                val mnemonic = curTok.text
+                pos++
+                val operands = mutableListOf<Expr>()
+                if (pos < tokens.size && !isEndOfLine(tokens[pos].type)) {
+                    while (true) {
+                        if (pos >= tokens.size || isEndOfLine(tokens[pos].type)) {
+                            throw AssemblerException("Expected operand after ','")
+                        }
+                        val (expr, newPos) = parseExpr(tokens, pos)
+                        operands.add(expr)
+                        pos = newPos
+                        if (pos >= tokens.size || isEndOfLine(tokens[pos].type)) break
+                        if (tokens[pos].type != TokenType.COMMA) {
+                            throw AssemblerException("Expected ',' between operands")
                         }
                         pos++
                     }
-                    else -> {
-                        val (expr, newPos) = parseExpr(tokens, pos)
-                        values.add(expr); pos = newPos
-                    }
                 }
+                ParseResult(Stmt.Instruction(label, mnemonic, operands, lineNum), pos)
             }
-            stmt = Stmt.Dw(values, label)
-        }
-        TokenType.DS -> {
-            pos++
-            val (expr, newPos) = parseExpr(tokens, pos)
-            stmt = Stmt.Ds(expr, label); pos = newPos
-        }
-        TokenType.SYMBOL -> {
-            val mnemonic = tokens[pos].text
-            val lineNum = tokens[pos].line
-            pos++
-            val operands = mutableListOf<Expr>()
-            while (pos < tokens.size && tokens[pos].type !in listOf(TokenType.NEWLINE, TokenType.EOF)) {
-                when (tokens[pos].type) {
-                    TokenType.COMMA -> pos++
-                    else -> {
-                        val (expr, newPos) = parseExpr(tokens, pos)
-                        operands.add(expr); pos = newPos
-                    }
-                }
+            else -> {
+                ParseResult(
+                    Stmt.ErrorMsg("Unexpected token: '${curTok.text.ifEmpty { curTok.type.name }}'", lineNum),
+                    skipToEndOfLine(tokens, pos + 1),
+                )
             }
-            stmt = Stmt.Instruction(label, mnemonic, operands, lineNum)
         }
-        else -> {
-            stmt = Stmt.ErrorMsg("Unexpected token: ${tokens[pos].type}", tokens[pos].line)
-            pos++
-        }
+    } catch (e: AssemblerException) {
+        ParseResult(Stmt.ErrorMsg(e.message ?: "Syntax error", lineNum), skipToEndOfLine(tokens, pos))
     }
-
-    return ParseResult(stmt, pos)
 }

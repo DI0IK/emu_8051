@@ -30,23 +30,35 @@ import kotlin.math.sin
 data class ServoSnapshot(val angle: Int) : ComponentSnapshot()
 
 class ServoComponent(config: HwComponentConfig) : HwComponent(config) {
-    private var tickCount = 0L
-    private var pulseStart = 0L
+    private var prevPin = -1
+    private var pulseStartCycle = -1L
     private var angle = 90
 
     override fun needsTick() = true
 
-    override fun tick(portValues: List<Int>) {
+    override fun tick(portValues: List<Int>, totalCycles: Long) {
         val portVal = portValues.firstOrNull() ?: return
-        tickCount++
         val pinState = (portVal shr config.pin) and 1
-        if (pinState == 1 && pulseStart == 0L) {
-            pulseStart = tickCount
-        } else if (pinState == 0 && pulseStart != 0L) {
-            val pulseWidth = (tickCount - pulseStart).toInt()
-            angle = ((pulseWidth - 3) * 180 / 100).coerceIn(0, 180)
-            pulseStart = 0
+        if (prevPin == -1) {
+            prevPin = pinState
+            return
         }
+        if (prevPin == 0 && pinState == 1) {
+            pulseStartCycle = totalCycles
+        } else if (prevPin == 1 && pinState == 0 && pulseStartCycle >= 0L) {
+            val pulseWidthUs = (totalCycles - pulseStartCycle).toInt()
+            if (pulseWidthUs in 500..2500) {
+                angle = ((pulseWidthUs - 1000) * 180 / 1000).coerceIn(0, 180)
+            }
+            pulseStartCycle = -1L
+        }
+        prevPin = pinState
+    }
+
+    override fun reset() {
+        prevPin = -1
+        pulseStartCycle = -1L
+        angle = 90
     }
 
     override fun snapshot() = ServoSnapshot(angle)
@@ -58,9 +70,13 @@ object ServoFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig) = ServoComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "Servo", typeId, ports = listOf(Port.P1), pin = 1)
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "P1.1 Servo", typeId, ports = listOf(Port.P1), pin = 1)
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name}.${config.pin} Servo"
+
+    override fun needsTick(config: HwComponentConfig) = true
+
+    override fun usedPins(config: HwComponentConfig) = listOf(config.port to config.pin)
 
     @Composable
     override fun Render(
@@ -71,9 +87,9 @@ object ServoFactory : HwComponentFactory {
     ) {
         val angle = (snapshot as? ServoSnapshot)?.angle ?: 90
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            ServoArm(angle, Modifier.size(48.dp))
+            ServoArm(angle, Modifier.size(56.dp))
             Text(
-                "${angle}°",
+                "${config.label}: ${angle}°",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -99,29 +115,33 @@ fun ServoArm(angle: Int, modifier: Modifier = Modifier) {
     val color = Color(0xFF44BB44)
     Canvas(modifier = modifier) {
         val cx = size.width / 2
-        val cy = size.height / 2
-        val bodyR = cx.coerceAtMost(cy) * 0.4f
-        val armLen = bodyR * 1.8f
+        val cy = size.height * 0.65f
+        val bodyR = (size.width / 2).coerceAtMost(size.height * 0.55f) * 0.55f
+        val armLen = bodyR * 1.45f
 
-        drawCircle(color = color.copy(alpha = 0.1f), radius = bodyR)
+        drawCircle(color = color.copy(alpha = 0.1f), radius = bodyR, center = Offset(cx, cy))
+        // Upper semicircle arc: 180° (9 o'clock) sweeping 180° to 360° (3 o'clock) via top
         drawArc(
-            color = color.copy(alpha = 0.25f), startAngle = 0f, sweepAngle = 180f, useCenter = false,
+            color = color.copy(alpha = 0.3f),
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = false,
             topLeft = Offset(cx - bodyR, cy - bodyR),
             size = Size(bodyR * 2, bodyR * 2),
-            style = Stroke(1f),
+            style = Stroke(1.5f),
         )
 
         for (tickAngle in listOf(0f, 90f, 180f)) {
             val tickRad = (tickAngle * PI / 180f).toFloat()
-            val inner = Offset(cx + sin(tickRad) * bodyR * 0.85f, cy - cos(tickRad) * bodyR * 0.85f)
-            val outer = Offset(cx + sin(tickRad) * bodyR * 1.05f, cy - cos(tickRad) * bodyR * 1.05f)
-            drawLine(color.copy(alpha = 0.4f), inner, outer, 1f)
+            val inner = Offset(cx - cos(tickRad) * bodyR * 0.85f, cy - sin(tickRad) * bodyR * 0.85f)
+            val outer = Offset(cx - cos(tickRad) * bodyR * 1.1f, cy - sin(tickRad) * bodyR * 1.1f)
+            drawLine(color.copy(alpha = 0.5f), inner, outer, 1.5f)
         }
 
-        drawCircle(color = color, radius = 4f)
-        val angleRad = (angle * PI / 180f).toFloat()
-        val end = Offset(cx + sin(angleRad) * armLen, cy - cos(angleRad) * armLen)
-        drawLine(color = color, start = Offset(cx, cy), end = end, strokeWidth = 2f)
-        drawCircle(color, 3f, end)
+        drawCircle(color = color, radius = 4f, center = Offset(cx, cy))
+        val angleRad = (angle.coerceIn(0, 180) * PI / 180f).toFloat()
+        val end = Offset(cx - cos(angleRad) * armLen, cy - sin(angleRad) * armLen)
+        drawLine(color = color, start = Offset(cx, cy), end = end, strokeWidth = 2.5f)
+        drawCircle(color, 3.5f, end)
     }
 }

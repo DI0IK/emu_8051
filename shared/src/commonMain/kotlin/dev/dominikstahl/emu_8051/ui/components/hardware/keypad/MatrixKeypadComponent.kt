@@ -1,7 +1,6 @@
 package dev.dominikstahl.emu_8051.ui.components.hardware.keypad
 
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.DropdownMenuItem
@@ -27,18 +26,27 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponentFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwUserInput
 import dev.dominikstahl.emu_8051.ui.components.hardware.PortController
 import dev.dominikstahl.emu_8051.ui.components.hardware.PortField
+import dev.dominikstahl.emu_8051.ui.components.hardware.PortFields
+
+data class KeypadSnapshot(val pressedKeys: Set<Int>) : ComponentSnapshot()
 
 class MatrixKeypadComponent(config: HwComponentConfig) : HwComponent(config) {
-    private val pressedKeys = mutableSetOf<String>()
-    private val drivenCols = mutableSetOf<Int>()
+    // Key packed as (row shl 4) or col to avoid String allocations in tick()
+    private val pressedKeys = mutableSetOf<Int>()
+    private var drivenMask = 0
     private var portCtrl: PortController? = null
+
+    private val isTwoPort: Boolean get() = config.rows > 4 || config.cols > 4
+    private val colPort: Port
+        get() = if (isTwoPort) (config.ports.getOrNull(1) ?: Port.P2) else config.port
+    private val colBitShift: Int get() = if (isTwoPort) 0 else 4
 
     override fun needsTick() = true
 
     override fun onUserInput(input: HwUserInput, portCtrl: PortController) {
         this.portCtrl = portCtrl
         if (input is HwUserInput.KeyInput && input.compId == config.id) {
-            val key = "${input.row},${input.col}"
+            val key = (input.row shl 4) or (input.col and 0x0F)
             if (input.pressed) {
                 pressedKeys.add(key)
             } else {
@@ -47,44 +55,48 @@ class MatrixKeypadComponent(config: HwComponentConfig) : HwComponent(config) {
         }
     }
 
-    override fun tick(portValues: List<Int>) {
+    override fun tick(portValues: List<Int>, totalCycles: Long) {
         val ctrl = portCtrl ?: return
-        val portVal = portValues.firstOrNull() ?: return
-        val shouldDrive = mutableSetOf<Int>()
+        val rowPortVal = portValues.getOrNull(0) ?: return
+        var desiredMask = 0
 
         for (key in pressedKeys) {
-            val parts = key.split(",")
-            val row = parts[0].toInt()
-            val col = parts[1].toInt()
-            if ((portVal and (1 shl row)) == 0) {
-                shouldDrive.add(col)
+            val row = key ushr 4
+            val col = key and 0x0F
+            if ((rowPortVal and (1 shl row)) == 0) {
+                desiredMask = desiredMask or (1 shl (col + colBitShift))
             }
         }
 
-        for (col in drivenCols.toSet()) {
-            if (col !in shouldDrive) {
-                ctrl.release(config.port, 1 shl (col + 4))
-                drivenCols.remove(col)
-            }
+        val toRelease = drivenMask and desiredMask.inv()
+        if (toRelease != 0) {
+            ctrl.release(colPort, toRelease)
         }
-
-        for (col in shouldDrive) {
-            if (col !in drivenCols) {
-                ctrl.drive(config.port, 1 shl (col + 4), 0)
-                drivenCols.add(col)
-            }
+        val toDrive = desiredMask and drivenMask.inv()
+        if (toDrive != 0) {
+            ctrl.drive(colPort, toDrive, 0)
         }
+        drivenMask = desiredMask
     }
 
     override fun reset() {
         pressedKeys.clear()
-        drivenCols.clear()
+        if (drivenMask != 0) {
+            portCtrl?.release(colPort, drivenMask)
+            drivenMask = 0
+        }
+    }
+
+    override fun onRemove(portCtrl: PortController) {
+        pressedKeys.clear()
+        if (drivenMask != 0) {
+            portCtrl.release(colPort, drivenMask)
+            drivenMask = 0
+        }
     }
 
     override fun snapshot(): ComponentSnapshot = KeypadSnapshot(pressedKeys.toSet())
 }
-
-data class KeypadSnapshot(val pressedKeys: Set<String>) : ComponentSnapshot()
 
 object MatrixKeypadFactory : HwComponentFactory {
     override val typeId = "MATRIX_KEYPAD"
@@ -94,9 +106,34 @@ object MatrixKeypadFactory : HwComponentFactory {
 
     override fun defaultConfig(id: String) = HwComponentConfig(id, "P1 Keypad (4x4)", typeId, ports = listOf(Port.P1), rows = 4, cols = 4)
 
-    override fun labelFor(config: HwComponentConfig) = "${config.port.name} Keypad (${config.rows}x${config.cols})"
+    override fun portCount(config: HwComponentConfig) = if (config.rows > 4 || config.cols > 4) 2 else 1
+
+    override fun portLabels(config: HwComponentConfig) =
+        if (portCount(config) == 2) listOf("Row Port", "Col Port") else listOf("Port")
+
+    override fun labelFor(config: HwComponentConfig): String {
+        return if (portCount(config) == 2) {
+            val p1 = config.ports.getOrNull(0)?.name ?: "P1"
+            val p2 = config.ports.getOrNull(1)?.name ?: "P2"
+            "$p1/$p2 Keypad (${config.rows}x${config.cols})"
+        } else {
+            "${config.port.name} Keypad (${config.rows}x${config.cols})"
+        }
+    }
 
     override fun needsTick(config: HwComponentConfig) = true
+
+    override fun usedPins(config: HwComponentConfig): List<Pair<Port, Int>> {
+        return if (portCount(config) == 2) {
+            val rowPort = config.ports.getOrNull(0) ?: Port.P1
+            val colPort = config.ports.getOrNull(1) ?: Port.P2
+            (0 until config.rows.coerceAtMost(8)).map { rowPort to it } +
+                (0 until config.cols.coerceAtMost(8)).map { colPort to it }
+        } else {
+            (0 until config.rows.coerceAtMost(4)).map { config.port to it } +
+                (4 until (4 + config.cols).coerceAtMost(8)).map { config.port to it }
+        }
+    }
 
     @Composable
     override fun Render(
@@ -107,7 +144,7 @@ object MatrixKeypadFactory : HwComponentFactory {
     ) {
         val s = snapshot as? KeypadSnapshot
         Text(
-            "${config.port.name} Keypad (${config.rows}x${config.cols})",
+            labelFor(config),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -125,11 +162,20 @@ object MatrixKeypadFactory : HwComponentFactory {
         config: HwComponentConfig,
         onUpdateComponent: (String, (HwComponentConfig) -> HwComponentConfig) -> Unit,
     ) {
-        PortField(config, onUpdateComponent)
+        if (portCount(config) == 2) {
+            PortFields(
+                portCount = 2,
+                config = config,
+                onUpdateComponent = onUpdateComponent,
+                labels = portLabels(config),
+            )
+        } else {
+            PortField(config, onUpdateComponent)
+        }
 
         var sizeExpanded by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Size", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(40.dp))
+            Text("Size", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
             ExposedDropdownMenuBox(
                 expanded = sizeExpanded,
                 onExpandedChange = { sizeExpanded = it },
@@ -147,7 +193,14 @@ object MatrixKeypadFactory : HwComponentFactory {
                 ExposedDropdownMenu(expanded = sizeExpanded, onDismissRequest = { sizeExpanded = false }) {
                     listOf(2, 4, 8).forEach { v ->
                         DropdownMenuItem(text = { Text("${v}\u00D7${v}") }, onClick = {
-                            onUpdateComponent(config.id) { it.copy(rows = v, cols = v) }
+                            onUpdateComponent(config.id) { c ->
+                                val ports = if (v > 4 && c.ports.size < 2) {
+                                    listOf(c.port, if (c.port == Port.P2) Port.P1 else Port.P2)
+                                } else {
+                                    c.ports
+                                }
+                                c.copy(rows = v, cols = v, ports = ports)
+                            }
                             sizeExpanded = false
                         })
                     }

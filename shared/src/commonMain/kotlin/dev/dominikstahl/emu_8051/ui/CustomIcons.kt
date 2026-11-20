@@ -12,7 +12,10 @@ object CustomIcons {
     val FolderOpen: ImageVector by lazy { buildIcon("FolderOpen", folderOpenPath) }
     val ContentPaste: ImageVector by lazy { buildIcon("ContentPaste", contentPastePath) }
     val SkipNext: ImageVector by lazy { buildIcon("SkipNext", skipNextPath) }
+    val StepOver: ImageVector by lazy { buildIcon("StepOver", stepOverPath) }
+    val StepOut: ImageVector by lazy { buildIcon("StepOut", stepOutPath) }
     val Pause: ImageVector by lazy { buildIcon("Pause", pausePath) }
+    val Examples: ImageVector by lazy { buildIcon("Examples", examplesPath) }
 
     private fun buildIcon(name: String, pathData: String) = ImageVector.Builder(
         name = "Custom.$name",
@@ -37,6 +40,14 @@ object CustomIcons {
         "M19 2h-4.18C14.4.84 13.3 0 12 0S9.6.84 9.18 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm7 18H5V4h2v3h10V4h2v16z"
     private const val skipNextPath =
         "M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"
+    // Curved arc jump over a dot (Material-style step-over)
+    private const val stepOverPath =
+        "M12 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7-9l-3-3v2.1A7.97 7.97 0 0 0 4 12h2a6 6 0 0 1 10-4.47V10l3-2z"
+    // Upward arrow out
+    private const val stepOutPath =
+        "M12 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM11 6.83V14h2V6.83l2.59 2.58L17 8l-5-5-5 5 1.41 1.41L11 6.83z"
     private const val pausePath =
         "M6 19h4V5H6v14zm8-14v14h4V5h-4z"
+    private const val examplesPath =
+        "M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"
 }

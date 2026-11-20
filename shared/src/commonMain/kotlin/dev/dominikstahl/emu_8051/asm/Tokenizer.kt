@@ -16,7 +16,9 @@ data class Token(
     val text: String = "",
     val intValue: Int = 0,
     val line: Int = 0,
-    val column: Int = 0
+    val column: Int = 0,
+    val startOffset: Int = 0,
+    val endOffset: Int = 0,
 )
 
 val directiveKeywords = mapOf(
@@ -41,12 +43,19 @@ fun tokenize(source: String): List<Token> {
     var col = 1
     val s = source
 
-    fun emit(type: TokenType, text: String = "", intValue: Int = 0) {
-        tokens.add(Token(type, text, intValue, line, col - text.length.coerceAtLeast(0)))
+    fun emit(
+        type: TokenType,
+        text: String = "",
+        intValue: Int = 0,
+        startPos: Int,
+        endPos: Int,
+        startCol: Int,
+    ) {
+        tokens.add(Token(type, text, intValue, line, startCol, startPos, endPos))
     }
 
-    fun error(msg: String) {
-        tokens.add(Token(TokenType.ERROR, msg, 0, line, col))
+    fun emitError(msg: String, startPos: Int, endPos: Int, startCol: Int) {
+        tokens.add(Token(TokenType.ERROR, msg, 0, line, startCol, startPos, endPos))
     }
 
     while (pos < s.length) {
@@ -54,131 +63,126 @@ fun tokenize(source: String): List<Token> {
 
         when {
             c == '\r' && pos + 1 < s.length && s[pos + 1] == '\n' -> {
-                emit(TokenType.NEWLINE)
+                emit(TokenType.NEWLINE, startPos = pos, endPos = pos + 2, startCol = col)
                 pos += 2; line++; col = 1
             }
-            c == '\n' -> {
-                emit(TokenType.NEWLINE)
+            c == '\n' || c == '\r' -> {
+                emit(TokenType.NEWLINE, startPos = pos, endPos = pos + 1, startCol = col)
                 pos++; line++; col = 1
             }
             c == ';' -> {
-                while (pos < s.length && s[pos] != '\n') pos++
+                while (pos < s.length && s[pos] != '\n' && s[pos] != '\r') pos++
             }
             c.isWhitespace() -> { pos++; col++ }
 
-            c == ',' -> { emit(TokenType.COMMA, ","); pos++; col++ }
-            c == ':' -> { emit(TokenType.COLON, ":"); pos++; col++ }
-            c == '@' -> { emit(TokenType.AT, "@"); pos++; col++ }
-            c == '#' -> { emit(TokenType.HASH, "#"); pos++; col++ }
-            c == '.' -> { emit(TokenType.DOT, "."); pos++; col++ }
-            c == '/' -> { emit(TokenType.SLASH, "/"); pos++; col++ }
-            c == '+' -> { emit(TokenType.PLUS, "+"); pos++; col++ }
-            c == '-' -> { emit(TokenType.MINUS, "-"); pos++; col++ }
-            c == '*' -> { emit(TokenType.STAR, "*"); pos++; col++ }
-            c == '(' -> { emit(TokenType.LPAREN, "("); pos++; col++ }
-            c == ')' -> { emit(TokenType.RPAREN, ")"); pos++; col++ }
-            c == '$' -> { emit(TokenType.DOLLAR, "$"); pos++; col++ }
+            c == ',' -> { emit(TokenType.COMMA, ",", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == ':' -> { emit(TokenType.COLON, ":", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == '@' -> { emit(TokenType.AT, "@", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == '#' -> { emit(TokenType.HASH, "#", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == '.' -> { emit(TokenType.DOT, ".", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == '/' -> { emit(TokenType.SLASH, "/", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == '+' -> { emit(TokenType.PLUS, "+", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == '-' -> { emit(TokenType.MINUS, "-", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == '*' -> { emit(TokenType.STAR, "*", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == '(' -> { emit(TokenType.LPAREN, "(", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == ')' -> { emit(TokenType.RPAREN, ")", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
+            c == '$' -> { emit(TokenType.DOLLAR, "$", startPos = pos, endPos = pos + 1, startCol = col); pos++; col++ }
 
             c == '\'' || c == '"' -> {
                 val quote = c
+                val startPos = pos
                 val startCol = col
                 pos++; col++
                 val sb = StringBuilder()
-                while (pos < s.length && s[pos] != quote) {
-                    if (s[pos] == '\\' && pos + 1 < s.length) {
+                while (pos < s.length && s[pos] != quote && s[pos] != '\n' && s[pos] != '\r') {
+                    if (s[pos] == '\\' && pos + 1 < s.length && s[pos + 1] != '\n' && s[pos + 1] != '\r') {
                         pos++; col++
                         when (s[pos]) {
                             'n' -> sb.append('\n')
                             'r' -> sb.append('\r')
                             't' -> sb.append('\t')
+                            '0' -> sb.append('\u0000')
                             '\'' -> sb.append('\'')
                             '"' -> sb.append('"')
                             '\\' -> sb.append('\\')
-                            else -> { sb.append(s[pos]) }
+                            else -> sb.append(s[pos])
                         }
                     } else {
                         sb.append(s[pos])
                     }
                     pos++; col++
                 }
-                if (pos < s.length) { pos++; col++ }
-                tokens.add(Token(TokenType.STRING, sb.toString(), 0, line, startCol))
+                if (pos < s.length && s[pos] == quote) {
+                    pos++; col++
+                    emit(TokenType.STRING, sb.toString(), startPos = startPos, endPos = pos, startCol = startCol)
+                } else {
+                    emitError("Unterminated string literal", startPos, pos, startCol)
+                }
             }
 
             c == '0' && pos + 1 < s.length && (s[pos + 1] == 'x' || s[pos + 1] == 'X') -> {
-                val start = pos
+                val startPos = pos
+                val startCol = col
                 pos += 2; col += 2
-                while (pos < s.length && s[pos].digitToIntOrNull(16) != null) { pos++; col++ }
-                val hexStr = s.substring(start + 2, pos)
-                if (hexStr.isNotEmpty()) {
-                    emit(TokenType.NUMBER, s.substring(start, pos), hexStr.toInt(16))
+                while (pos < s.length && s[pos].isLetterOrDigit()) { pos++; col++ }
+                val hexStr = s.substring(startPos + 2, pos)
+                val parsed = if (hexStr.isNotEmpty() && hexStr.all { it.digitToIntOrNull(16) != null }) {
+                    hexStr.toLongOrNull(16)
+                } else null
+                if (parsed != null && parsed <= 0xFFFFFFFFL) {
+                    emit(TokenType.NUMBER, s.substring(startPos, pos), parsed.toInt(), startPos, pos, startCol)
                 } else {
-                    error("Invalid hex number"); pos = start + 2; col = start + 3
+                    emitError("Invalid hex number: ${s.substring(startPos, pos)}", startPos, pos, startCol)
                 }
             }
 
             c.isDigit() -> {
-                val start = pos
-                while (pos < s.length && s[pos].digitToIntOrNull(16) != null) pos++
-                col += (pos - start)
-                if (pos < s.length && (s[pos] == 'h' || s[pos] == 'H')) {
-                    val digits = s.substring(start, pos)
-                    if (digits.all { it.digitToIntOrNull(16) != null }) {
-                        emit(TokenType.NUMBER, s.substring(start, pos + 1), digits.toInt(16))
-                        pos++; col++
-                    } else {
-                        error("Invalid hex digits")
-                    }
-                } else if (pos < s.length && (s[pos] == 'b' || s[pos] == 'B')) {
-                    val digits = s.substring(start, pos)
-                    if (digits.all { it == '0' || it == '1' }) {
-                        emit(TokenType.NUMBER, s.substring(start, pos + 1), digits.toInt(2))
-                        pos++; col++
-                    } else {
-                        error("Invalid binary digits")
-                    }
+                val startPos = pos
+                val startCol = col
+                while (pos < s.length && s[pos].isLetterOrDigit()) { pos++; col++ }
+                val raw = s.substring(startPos, pos)
+                val last = raw.last()
+                val (digits, radix) = when {
+                    raw.length > 1 && (last == 'h' || last == 'H') -> raw.dropLast(1) to 16
+                    raw.length > 2 && raw[0] == '0' && (raw[1] == 'b' || raw[1] == 'B') -> raw.drop(2) to 2
+                    raw.length > 1 && (last == 'b' || last == 'B') -> raw.dropLast(1) to 2
+                    raw.length > 1 && (last == 'o' || last == 'O' || last == 'q' || last == 'Q') -> raw.dropLast(1) to 8
+                    raw.length > 1 && (last == 'd' || last == 'D') -> raw.dropLast(1) to 10
+                    else -> raw to 10
+                }
+                val parsed = if (digits.isNotEmpty() && digits.all { it.digitToIntOrNull(radix) != null }) {
+                    digits.toLongOrNull(radix)
+                } else null
+                if (parsed != null && parsed <= 0xFFFFFFFFL) {
+                    emit(TokenType.NUMBER, raw, parsed.toInt(), startPos, pos, startCol)
                 } else {
-                    val numStr = s.substring(start, pos)
-                    if (numStr.all { it.isDigit() }) {
-                        emit(TokenType.NUMBER, numStr, numStr.toInt(10))
-                    } else {
-                        error("Invalid number: $numStr (missing 'h' suffix?)")
-                    }
+                    emitError("Invalid number: $raw", startPos, pos, startCol)
                 }
             }
 
-            c.isLetter() || c == '_' || c == '.' -> {
-                val start = pos
-                while (pos < s.length && (s[pos].isLetterOrDigit() || s[pos] == '_')) pos++
-                col += (pos - start)
-                val word = s.substring(start, pos)
-
-                if (word.length > 1 && (word.last() == 'h' || word.last() == 'H')) {
-                    val digits = word.dropLast(1)
-                    if (digits.all { it.digitToIntOrNull(16) != null }) {
-                        emit(TokenType.NUMBER, word, digits.toInt(16))
-                        continue
-                    }
-                }
-                if (word.length > 1 && (word.last() == 'b' || word.last() == 'B')) {
-                    val digits = word.dropLast(1)
-                    if (digits.all { it == '0' || it == '1' }) {
-                        emit(TokenType.NUMBER, word, digits.toInt(2))
-                        continue
-                    }
-                }
-
+            c.isLetter() || c == '_' -> {
+                val startPos = pos
+                val startCol = col
+                while (pos < s.length && (s[pos].isLetterOrDigit() || s[pos] == '_')) { pos++; col++ }
+                val word = s.substring(startPos, pos)
                 val upper = word.uppercase()
-                directiveKeywords[upper]?.let { emit(it, word); continue }
-                operatorKeywords[upper]?.let { emit(it, word); continue }
-                emit(TokenType.SYMBOL, word)
+                val kwType = directiveKeywords[upper] ?: operatorKeywords[upper]
+                if (kwType != null) {
+                    emit(kwType, word, startPos = startPos, endPos = pos, startCol = startCol)
+                } else {
+                    emit(TokenType.SYMBOL, word, startPos = startPos, endPos = pos, startCol = startCol)
+                }
             }
 
-            c == '\r' -> { pos++; line++; col = 1 }
-            else -> { error("Unexpected character '$c'"); pos++; col++ }
+            else -> {
+                val startPos = pos
+                val startCol = col
+                pos++; col++
+                emitError("Unexpected character '$c'", startPos, pos, startCol)
+            }
         }
     }
 
-    emit(TokenType.EOF)
+    emit(TokenType.EOF, startPos = s.length, endPos = s.length, startCol = col)
     return tokens
 }

@@ -14,8 +14,9 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.ComponentSnapshot
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponent
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponentFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwUserInput
-import dev.dominikstahl.emu_8051.ui.components.hardware.UnitSnapshot
+import dev.dominikstahl.emu_8051.ui.components.hardware.PolarityField
 import dev.dominikstahl.emu_8051.ui.components.hardware.PortField
+import dev.dominikstahl.emu_8051.ui.components.hardware.UnitSnapshot
 
 class LedBarComponent(config: HwComponentConfig) : HwComponent(config) {
     override fun snapshot(): ComponentSnapshot = UnitSnapshot
@@ -31,6 +32,8 @@ object LedBarFactory : HwComponentFactory {
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name} LED Bar"
 
+    override fun usedPins(config: HwComponentConfig) = (0..7).map { config.port to it }
+
     @Composable
     override fun Render(
         config: HwComponentConfig,
@@ -38,7 +41,8 @@ object LedBarFactory : HwComponentFactory {
         portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
-        val portValue = portValues.firstOrNull() ?: 0
+        val raw = portValues.firstOrNull() ?: 0
+        val effective = if (config.activeLow) (raw xor 0xFF) and 0xFF else raw and 0xFF
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 config.port.name,
@@ -47,7 +51,7 @@ object LedBarFactory : HwComponentFactory {
                 maxLines = 1,
                 textAlign = TextAlign.Center,
             )
-            LedBar(portValue = portValue, color = Color(0xFFFF4444))
+            LedBar(portValue = effective, color = Color(0xFFFF4444))
         }
     }
 
@@ -58,5 +62,6 @@ object LedBarFactory : HwComponentFactory {
         onUpdateComponent: (String, (HwComponentConfig) -> HwComponentConfig) -> Unit,
     ) {
         PortField(config, onUpdateComponent)
+        PolarityField(config, onUpdateComponent)
     }
 }

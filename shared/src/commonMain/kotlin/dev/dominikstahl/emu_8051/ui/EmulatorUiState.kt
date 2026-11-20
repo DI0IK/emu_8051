@@ -1,6 +1,8 @@
 package dev.dominikstahl.emu_8051.ui
 
+import androidx.compose.runtime.Immutable
 import dev.dominikstahl.emu_8051.asm.AssemblyError
+import dev.dominikstahl.emu_8051.asm.AssemblyWarning
 import dev.dominikstahl.emu_8051.ui.components.hardware.ComponentSnapshot
 import kotlinx.serialization.Serializable
 
@@ -21,12 +23,23 @@ data class HwComponentConfig(
     val cols: Int = 4,
     val lcdCols: Int = 16,
     val lcdLines: Int = 2,
+    val activeLow: Boolean = false,
     val props: Map<String, String> = emptyMap(),
 ) {
     val port: Port get() = ports.firstOrNull() ?: Port.P1
 }
 
 fun defaultHwConfig(): List<HwComponentConfig> = emptyList()
+
+@Immutable
+@OptIn(ExperimentalUnsignedTypes::class)
+data class MemorySnapshots(
+    val rom: UByteArray = UByteArray(65536),
+    val ram: UByteArray = UByteArray(256),
+    val xram: UByteArray = UByteArray(65536),
+    val sfr: UByteArray = UByteArray(128),
+    val version: Long = 0L,
+)
 
 data class EmulatorUiState(
     val pc: Int = 0,
@@ -40,6 +53,7 @@ data class EmulatorUiState(
     val p1: Int = 0xFF,
     val p2: Int = 0xFF,
     val p3: Int = 0xFF,
+    val activeRegisters: List<Int> = List(8) { 0 },
     val totalCycles: Long = 0,
     val actualIps: Long = 0,
     val isRunning: Boolean = false,
@@ -47,13 +61,17 @@ data class EmulatorUiState(
     val isSlow: Boolean = false,
     val targetIps: Int = 10,
     val sourceCode: String = "",
+    val currentFileName: String? = null,
+    val isDirty: Boolean = false,
     val assemblyErrors: List<AssemblyError> = emptyList(),
+    val assemblyWarnings: List<AssemblyWarning> = emptyList(),
     val isProgramLoaded: Boolean = false,
     val hwConfig: List<HwComponentConfig> = defaultHwConfig(),
     val breakpoints: Set<Int> = emptySet(),
     val currentLine: Int? = null,
     val savedFiles: List<String> = emptyList(),
     val componentSnapshots: Map<String, ComponentSnapshot> = emptyMap(),
+    val memorySnapshots: MemorySnapshots = MemorySnapshots(),
     val tmod: Int = 0,
     val tcon: Int = 0,
     val tl0: Int = 0,
@@ -69,6 +87,7 @@ data class EmulatorUiState(
     val ip: Int = 0,
     val scon: Int = 0,
     val sbuf: Int = 0,
+    val sbufTx: Int = 0,
     val pcon: Int = 0,
     val assemblyVersion: Int = 0,
 )

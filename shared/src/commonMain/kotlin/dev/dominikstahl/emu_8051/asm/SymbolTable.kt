@@ -2,55 +2,80 @@ package dev.dominikstahl.emu_8051.asm
 
 enum class SymType { SFR, BIT, EQU, DATA, CODE, LABEL }
 
+private data class DeferredSymbol(
+    val originalName: String,
+    val expr: Expr,
+    val type: SymType,
+    val pc: Int,
+    val line: Int,
+)
+
 class SymbolTable {
     private val values = mutableMapOf<String, Int>()
     private val types = mutableMapOf<String, SymType>()
-    private val deferred = mutableMapOf<String, Expr>()
+    private val userDefined = mutableSetOf<String>()
+    private val deferred = linkedMapOf<String, DeferredSymbol>()
 
     fun predefined(name: String, value: Int, type: SymType) {
-        values[name] = value
-        types[name] = type
+        val key = name.uppercase()
+        values[key] = value
+        types[key] = type
     }
 
-    fun set(name: String, value: Int, type: SymType) {
-        values[name] = value
-        types[name] = type
+    fun set(name: String, value: Int, type: SymType, line: Int = 0) {
+        val key = name.uppercase()
+        if (key in userDefined || key in deferred) {
+            throw AssemblerException("Duplicate symbol: $name")
+        }
+        values[key] = value
+        types[key] = type
+        userDefined.add(key)
     }
 
-    fun defer(name: String, expr: Expr) {
-        deferred[name] = expr
+    fun defer(name: String, expr: Expr, type: SymType = SymType.EQU, pc: Int = 0, line: Int = 0) {
+        val key = name.uppercase()
+        if (key in userDefined || key in deferred) {
+            throw AssemblerException("Duplicate symbol: $name")
+        }
+        deferred[key] = DeferredSymbol(name, expr, type, pc, line)
     }
 
-    fun resolveDeferred(pc: Int) {
+    fun resolveDeferred(): List<AssemblyError> {
         var changed = true
-        while (changed) {
+        while (changed && deferred.isNotEmpty()) {
             changed = false
             val keys = deferred.keys.toList()
-            for (name in keys) {
-                val expr = deferred[name] ?: continue
+            for (key in keys) {
+                val entry = deferred[key] ?: continue
                 try {
-                    val v = evalExpr(expr, this, pc)
-                    values[name] = v
-                    types[name] = types[name] ?: SymType.EQU
-                    deferred.remove(name)
+                    val v = evalExpr(entry.expr, this, entry.pc)
+                    values[key] = v
+                    types[key] = entry.type
+                    userDefined.add(key)
+                    deferred.remove(key)
                     changed = true
-                } catch (_: Exception) {
+                } catch (_: AssemblerException) {
+                    // May depend on a symbol defined later; retry on next pass
                 }
             }
         }
+        if (deferred.isEmpty()) return emptyList()
+        return deferred.values.map { entry ->
+            val msg = try {
+                evalExpr(entry.expr, this, entry.pc)
+                "Unresolved symbol: ${entry.originalName}"
+            } catch (e: AssemblerException) {
+                "Cannot resolve '${entry.originalName}': ${e.message}"
+            }
+            AssemblyError(entry.line, msg)
+        }
     }
 
-    fun get(name: String): Int? {
-        val upper = name.uppercase()
-        return values[upper] ?: values[name]
-    }
+    fun get(name: String): Int? = values[name.uppercase()]
 
-    fun getType(name: String): SymType? {
-        val upper = name.uppercase()
-        return types[upper] ?: types[name]
-    }
+    fun getType(name: String): SymType? = types[name.uppercase()]
 
-    fun has(name: String): Boolean = values.containsKey(name) || values.containsKey(name.uppercase())
+    fun has(name: String): Boolean = values.containsKey(name.uppercase())
 }
 
 fun initPredefinedSymbols(table: SymbolTable) {
@@ -85,6 +110,20 @@ fun initPredefinedSymbols(table: SymbolTable) {
     table.predefined("ACC", 0xE0, SymType.SFR)
     table.predefined("B", 0xF0, SymType.SFR)
 
+    // Port 1 alternate bits (8052 Timer 2)
+    table.predefined("T2", 0x90, SymType.BIT)
+    table.predefined("T2EX", 0x91, SymType.BIT)
+
+    // Port 3 alternate bits
+    table.predefined("RXD", 0xB0, SymType.BIT)
+    table.predefined("TXD", 0xB1, SymType.BIT)
+    table.predefined("INT0", 0xB2, SymType.BIT)
+    table.predefined("INT1", 0xB3, SymType.BIT)
+    table.predefined("T0", 0xB4, SymType.BIT)
+    table.predefined("T1", 0xB5, SymType.BIT)
+    table.predefined("WR", 0xB6, SymType.BIT)
+    table.predefined("RD", 0xB7, SymType.BIT)
+
     // PSW bits
     table.predefined("CY", 0xD7, SymType.BIT)
     table.predefined("AC", 0xD6, SymType.BIT)
@@ -92,6 +131,7 @@ fun initPredefinedSymbols(table: SymbolTable) {
     table.predefined("RS1", 0xD4, SymType.BIT)
     table.predefined("RS0", 0xD3, SymType.BIT)
     table.predefined("OV", 0xD2, SymType.BIT)
+    table.predefined("F1", 0xD1, SymType.BIT)
     table.predefined("P", 0xD0, SymType.BIT)
 
     // TCON bits

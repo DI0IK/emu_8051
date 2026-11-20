@@ -1,7 +1,11 @@
+@file:OptIn(ExperimentalUnsignedTypes::class)
+
 package dev.dominikstahl.emu_8051
 
 import dev.dominikstahl.emu_8051.asm.assemble
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -604,5 +608,110 @@ class AssemblerTest {
         assertTrue(rom[0x105] == 0xFF.toUByte())  // #0FFh
         assertTrue(rom[0x106] == 0x80.toUByte())  // SJMP
         assertTrue(rom[0x107] == 0xFE.toUByte())  // -2
+    }
+
+    @Test
+    fun `MOV direct direct swaps source and destination bytes as opcode 85h src dst`() {
+        val result = assemble("MOV 30h, 40h")
+        assertTrue(result.isSuccess, result.errors.joinToString("\n") { it.message })
+        val rom = result.rom!!
+        assertEquals(0x85.toUByte(), rom[0])
+        assertEquals(0x40.toUByte(), rom[1]) // src comes FIRST in 8051 encoding!
+        assertEquals(0x30.toUByte(), rom[2]) // dst comes SECOND
+    }
+
+    @Test
+    fun `JMP @A+DPTR encodes as 73h`() {
+        val result = assemble("JMP @A+DPTR")
+        assertTrue(result.isSuccess, result.errors.joinToString("\n") { it.message })
+        assertEquals(0x73.toUByte(), result.rom!![0])
+    }
+
+    @Test
+    fun `binary octal decimal and hex literals parse accurately`() {
+        val result = assemble("""
+            MOV A, #10100101b
+            MOV A, #0b1100
+            MOV A, #17o
+            MOV A, #17q
+            MOV A, #42d
+            MOV A, #0FFh
+        """.trimIndent())
+        assertTrue(result.isSuccess, result.errors.joinToString("\n") { it.message })
+        val rom = result.rom!!
+        assertEquals(0xA5.toUByte(), rom[1])
+        assertEquals(0x0C.toUByte(), rom[3])
+        assertEquals(15.toUByte(), rom[5])
+        assertEquals(15.toUByte(), rom[7])
+        assertEquals(42.toUByte(), rom[9])
+        assertEquals(0xFF.toUByte(), rom[11])
+    }
+
+    @Test
+    fun `RAM bit addressing maps 20h-2Fh and invalid non-bit-addressable bytes fail`() {
+        val ok = assemble("SETB 20h.3\nCLR 2Fh.7\nCPL P1.2\nJB ACC.0, $")
+        assertTrue(ok.isSuccess, ok.errors.joinToString("\n") { it.message })
+        val rom = ok.rom!!
+        assertEquals(0x03.toUByte(), rom[1]) // (0x20 - 0x20)*8 + 3
+        assertEquals(0x7F.toUByte(), rom[3]) // (0x2F - 0x20)*8 + 7 = 0x7F
+        assertEquals(0x92.toUByte(), rom[5]) // P1 (0x90) + 2
+        assertEquals(0xE0.toUByte(), rom[7]) // ACC (0xE0) + 0
+
+        assertFalse(assemble("SETB PCON.0").isSuccess) // 0x87 is not bit-addressable
+        assertFalse(assemble("SETB P1.8").isSuccess)   // bit index 8 out of range
+    }
+
+    @Test
+    fun `operators AND OR XOR SHL SHR chained unary DB and DW expressions work`() {
+        val result = assemble("""
+            MOV A, #(0Fh AND 0Ah) OR 10h
+            MOV A, #(1 XOR 3) SHL 2
+            MOV A, #80h SHR 1
+            MOV A, #LOW (NOT 0)
+            MOV A, #HIGH (-1)
+            DB 'A' + 1, 'Z' - 1
+            DW 'A' + 1
+        """.trimIndent())
+        assertTrue(result.isSuccess, result.errors.joinToString("\n") { it.message })
+        val rom = result.rom!!
+        assertEquals(0x1A.toUByte(), rom[1])
+        assertEquals(0x08.toUByte(), rom[3])
+        assertEquals(0x40.toUByte(), rom[5])
+        assertEquals(0xFF.toUByte(), rom[7])
+        assertEquals(0xFF.toUByte(), rom[9])
+        assertEquals('B'.code.toUByte(), rom[10])
+        assertEquals('Y'.code.toUByte(), rom[11])
+        assertEquals(0x00.toUByte(), rom[12])
+        assertEquals('B'.code.toUByte(), rom[13])
+    }
+
+    @Test
+    fun `case-insensitive labels hex-letter labels CH EQU in ORG and dollar expressions work`() {
+        val result = assemble("""
+            BASE EQU 100h
+            ORG BASE
+            msg: DB "Hello"
+            LEN EQU $ - MSG
+            ch: MOV A, #len
+            LJMP CH
+        """.trimIndent())
+        assertTrue(result.isSuccess, result.errors.joinToString("\n") { it.message })
+        val rom = result.rom!!
+        assertEquals(5.toUByte(), rom[0x106]) // LEN = 5
+        assertEquals(0x02.toUByte(), rom[0x107]) // LJMP ch (0x105)
+        assertEquals(0x01.toUByte(), rom[0x108])
+        assertEquals(0x05.toUByte(), rom[0x109])
+    }
+
+    @Test
+    fun `assembler reports semantic and syntax errors cleanly`() {
+        assertFalse(assemble("MOV A, #MISSING_SYM").isSuccess)
+        assertFalse(assemble("DUP:\nNOP\nDUP:\nNOP").isSuccess)
+        assertFalse(assemble("ORG 0\nSJMP FAR_AWAY\nDS 200\nFAR_AWAY:\nNOP").isSuccess)
+        assertFalse(assemble("ORG 0000h\nAJMP NEXT_BLK\nORG 0900h\nNEXT_BLK:\nNOP").isSuccess)
+        assertFalse(assemble("MOV A, @R2").isSuccess)
+        assertFalse(assemble("MOV A, #10 / 0").isSuccess)
+        assertFalse(assemble("MOV A, 1 2").isSuccess)
+        assertFalse(assemble("DB \"unterminated").isSuccess)
     }
 }

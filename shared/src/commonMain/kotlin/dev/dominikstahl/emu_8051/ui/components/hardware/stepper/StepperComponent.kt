@@ -24,22 +24,28 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-data class StepperSnapshot(val positionDegrees: Float) : ComponentSnapshot()
+data class StepperSnapshot(
+    val positionDegrees: Float,
+    val coilBits: Int = 0,
+) : ComponentSnapshot()
 
 class StepperComponent(config: HwComponentConfig) : HwComponent(config) {
     private var lastPattern = -1
     private var position = 0f
+    private var coilBits = 0
 
+    // Half-step sequence on P.0..P.3 (1 = A, 2 = B, 4 = C, 8 = D)
     private val patterns = listOf(
-        0b1000, 0b1100, 0b0100, 0b0110,
-        0b0010, 0b0011, 0b0001, 0b1001,
+        0b0001, 0b0011, 0b0010, 0b0110,
+        0b0100, 0b1100, 0b1000, 0b1001,
     )
 
     override fun needsTick() = true
 
-    override fun tick(portValues: List<Int>) {
+    override fun tick(portValues: List<Int>, totalCycles: Long) {
         val portVal = portValues.firstOrNull() ?: return
         val pattern = portVal and 0x0F
+        coilBits = pattern
         if (pattern == lastPattern || pattern == 0 || pattern == 0x0F) return
 
         val idx = patterns.indexOf(pattern)
@@ -49,13 +55,20 @@ class StepperComponent(config: HwComponentConfig) : HwComponent(config) {
                 var diff = idx - lastIdx
                 if (diff > 4) diff -= 8
                 else if (diff < -4) diff += 8
-                position += diff * 0.45f
+                // 64 half-steps / 32 full steps per visual revolution (5.625 deg/half-step)
+                position += diff * 5.625f
             }
         }
         if (idx >= 0) lastPattern = pattern
     }
 
-    override fun snapshot() = StepperSnapshot(position)
+    override fun reset() {
+        lastPattern = -1
+        position = 0f
+        coilBits = 0
+    }
+
+    override fun snapshot() = StepperSnapshot(position, coilBits)
 }
 
 object StepperFactory : HwComponentFactory {
@@ -64,9 +77,13 @@ object StepperFactory : HwComponentFactory {
 
     override fun createComponent(config: HwComponentConfig) = StepperComponent(config)
 
-    override fun defaultConfig(id: String) = HwComponentConfig(id, "Stepper", typeId, ports = listOf(Port.P1))
+    override fun defaultConfig(id: String) = HwComponentConfig(id, "P1 Stepper", typeId, ports = listOf(Port.P1))
 
     override fun labelFor(config: HwComponentConfig) = "${config.port.name} Stepper"
+
+    override fun needsTick(config: HwComponentConfig) = true
+
+    override fun usedPins(config: HwComponentConfig) = (0..3).map { config.port to it }
 
     @Composable
     override fun Render(
@@ -75,16 +92,20 @@ object StepperFactory : HwComponentFactory {
         portValues: List<Int>,
         onUserInput: (HwUserInput) -> Unit,
     ) {
-        val angle = (snapshot as? StepperSnapshot)?.positionDegrees ?: 0f
+        val snap = snapshot as? StepperSnapshot
+        val angle = snap?.positionDegrees ?: 0f
+        val coils = snap?.coilBits ?: 0
+        val normAngle = ((angle % 360f) + 360f) % 360f
+
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                config.label,
+                "${config.label} (${normAngle.toInt()}°)",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 textAlign = TextAlign.Center,
             )
-            StepperRotor(angle, Modifier.size(48.dp))
+            StepperRotor(angle, coils, Modifier.size(52.dp))
         }
     }
 
@@ -99,17 +120,18 @@ object StepperFactory : HwComponentFactory {
 }
 
 @Composable
-fun StepperRotor(angleDegrees: Float, modifier: Modifier = Modifier) {
+fun StepperRotor(angleDegrees: Float, coilBits: Int = 0, modifier: Modifier = Modifier) {
     val color = Color(0xFF4488FF)
     Canvas(modifier = modifier) {
         val cx = size.width / 2
         val cy = size.height / 2
-        val r = cx.coerceAtMost(cy) * 0.75f
+        val r = cx.coerceAtMost(cy) * 0.78f
 
         drawCircle(color = color.copy(alpha = 0.1f), radius = r)
 
         val coilOff = color.copy(alpha = 0.2f)
-        val coilOn = color.copy(alpha = 0.7f)
+        val coilOn = Color(0xFFFFAA00)
+        // Coils A, B, C, D at top (0°), right (90°), bottom (180°), left (270°)
         val coilPos = listOf(
             Offset(cx, cy - r * 0.85f),
             Offset(cx + r * 0.85f, cy),
@@ -117,20 +139,14 @@ fun StepperRotor(angleDegrees: Float, modifier: Modifier = Modifier) {
             Offset(cx - r * 0.85f, cy),
         )
         for ((i, pos) in coilPos.withIndex()) {
-            val active = (angleDegrees.toInt() / 45) % 8
-            val coilActive = when (i) {
-                0 -> active in 0..1 || active == 7
-                1 -> active in 1..3
-                2 -> active in 3..5
-                3 -> active in 5..7
-                else -> false
-            }
-            drawCircle(if (coilActive) coilOn else coilOff, r * 0.08f, pos)
+            val active = (coilBits and (1 shl i)) != 0
+            drawCircle(if (active) coilOn else coilOff, r * 0.12f, pos)
         }
 
         drawCircle(color = color, radius = 4f)
+        // 0° points straight up (12 o'clock) matching coil A
         val angleRad = (angleDegrees * PI / 180f).toFloat()
-        val end = Offset(cx + cos(angleRad) * r, cy + sin(angleRad) * r)
-        drawLine(color = color, start = Offset(cx, cy), end = end, strokeWidth = 2f)
+        val end = Offset(cx + sin(angleRad) * r * 0.75f, cy - cos(angleRad) * r * 0.75f)
+        drawLine(color = color, start = Offset(cx, cy), end = end, strokeWidth = 2.5f)
     }
 }

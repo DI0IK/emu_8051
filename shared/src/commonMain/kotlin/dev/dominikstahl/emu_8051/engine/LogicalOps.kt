@@ -27,7 +27,6 @@ fun CpuState.anl_a_imm(): Int {
     return 1
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.anl_direct_a(): Int {
     pc++
     val addr = rom[pc++]
@@ -35,7 +34,6 @@ fun CpuState.anl_direct_a(): Int {
     return 1
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.anl_direct_imm(): Int {
     pc++
     val addr = rom[pc++]
@@ -87,7 +85,6 @@ fun CpuState.orl_a_imm(): Int {
     return 1
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.orl_direct_a(): Int {
     pc++
     val addr = rom[pc++]
@@ -95,7 +92,6 @@ fun CpuState.orl_direct_a(): Int {
     return 1
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.orl_direct_imm(): Int {
     pc++
     val addr = rom[pc++]
@@ -147,7 +143,6 @@ fun CpuState.xrl_a_imm(): Int {
     return 1
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.xrl_direct_a(): Int {
     pc++
     val addr = rom[pc++]
@@ -155,7 +150,6 @@ fun CpuState.xrl_direct_a(): Int {
     return 1
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.xrl_direct_imm(): Int {
     pc++
     val addr = rom[pc++]

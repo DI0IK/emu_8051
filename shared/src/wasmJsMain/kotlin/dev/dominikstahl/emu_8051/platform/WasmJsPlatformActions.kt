@@ -1,11 +1,17 @@
+@file:OptIn(ExperimentalWasmJsInterop::class)
+
 package dev.dominikstahl.emu_8051.platform
 
 import kotlinx.browser.window
 import kotlinx.coroutines.await
 
 actual fun copyToClipboard(text: String) {
-    js("navigator.clipboard.writeText(text)")
+    jsCopyToClipboard(text)
 }
+
+private fun jsCopyToClipboard(text: String): Unit = js(
+    "(function() { try { if (navigator && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).catch(function(){}); } } catch (e) {} })()"
+)
 
 actual suspend fun pasteFromClipboard(): String? {
     return try {

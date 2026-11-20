@@ -8,7 +8,7 @@ class CpuState {
     /** Reference to the timer controller, set after construction. */
     var timerController: TimerController? = null
 
-    /** Set to true when an instruction writes to IE (0xA8) or IP (0xB8). */
+    /** Set to true when an instruction accesses IE (0xA8) or IP (0xB8). */
     var interruptControllerAccessFlag: Boolean = false
 
     /** Called when the program writes to SBUF (0x99) for UART transmission. */
@@ -23,8 +23,17 @@ class CpuState {
     /** External RAM (XRAM), 64KB. Accessed via MOVX instructions. */
     val xram = UByteArray(65536)
 
+    /** Set when XRAM is written or reset so UI memory snapshots only copy 64KB when needed. */
+    var xramDirty: Boolean = true
+
     /** Special Function Register space, 128 bytes (0x80-0xFF). Indexed as sfr[addr - 0x80]. */
     val sfr = UByteArray(128)
+
+    /** Physically separate UART transmit and receive buffers backing SBUF (0x99). */
+    var sbufTx: UByte = 0u
+        private set
+    var sbufRx: UByte = 0u
+        private set
 
     /** Cached register bank base address (0, 8, 16, or 24). Updated when PSW is written. */
     var registerBankBase: Int = 0
@@ -42,7 +51,13 @@ class CpuState {
         val sfrVal = sfr[sfrIdx].toInt()
         val driven = externalDriven[portIdx]
         return if (driven == 0) sfrVal
-            else (sfrVal and driven.inv()) or (externalValue[portIdx] and driven)
+        else (sfrVal and driven.inv()) or (externalValue[portIdx] and driven)
+    }
+
+    /** Deliver a received serial byte into the SBUF receive buffer without overwriting TX. */
+    fun receiveSerialByte(byte: UByte) {
+        sbufRx = byte
+        sfr[0x99 - 0x80] = byte
     }
 
     // --- Port 0 (0x80) ---
@@ -77,7 +92,7 @@ class CpuState {
             DPL = (value and 0xFF).toUByte()
         }
 
-    /** Power Control at 0x87. Bit 0 (IDL) = idle mode, bit 1 (PD) = power-down mode. */
+    /** Power Control at 0x87. Bit 7 (SMOD) = double baud rate, bit 1 (PD) = power-down, bit 0 (IDL) = idle. */
     var PCON: UByte
         get() = sfr[0x87 - 0x80]
         set(value) { sfr[0x87 - 0x80] = value }
@@ -135,14 +150,9 @@ class CpuState {
         set(value) { sfr[0x8D - 0x80] = value }
 
     /**
-     * Auxiliary Register at 0x8E.
-     * Bit 0 (RCLK)   Serial port receive clock source
-     * Bit 1 (TCLK)   Serial port transmit clock source
-     * Bit 2 (EXEN2)  Timer 2 external enable
-     * Bit 3 (T2OE)   Timer 2 output enable (Atmel variant)
-     * Bit 5 (M0)     External RAM timing (Atmel)
-     * Bit 6 (A0)     XRAM addressing (Atmel, 256/64KB)
-     * Bit 7 (INT2EN) Interrupt 2 enable (Atmel)
+     * Auxiliary Register at 0x8E (Atmel/Philips 8052 variants).
+     * Bit 0 (AO)     ALE output disable
+     * Bit 1 (EXTRAM) Internal/external XRAM access select
      */
     var AUXR: UByte
         get() = sfr[0x8E - 0x80]
@@ -177,10 +187,13 @@ class CpuState {
         get() = sfr[0x98 - 0x80]
         set(value) { sfr[0x98 - 0x80] = value }
 
-    /** Serial Data Buffer at 0x99. Two physically separate registers: transmit (write) and receive (read). */
+    /** Serial Data Buffer at 0x99. Physically separate transmit (write) and receive (read) registers. */
     var SBUF: UByte
-        get() = sfr[0x99 - 0x80]
-        set(value) { sfr[0x99 - 0x80] = value }
+        get() = sbufRx
+        set(value) {
+            sbufTx = value
+            onSbufTx?.invoke(value)
+        }
 
     // --- Port 2 (0xA0) ---
 
@@ -194,8 +207,7 @@ class CpuState {
     /**
      * Interrupt Enable at 0xA8 (bit-addressable).
      * Bit 7 (EA)    Global interrupt enable
-     * Bit 6 (EC)    Timer 2 interrupt enable (Atmel)
-     * Bit 5 (ET2)   Timer 2 interrupt enable (Intel)
+     * Bit 5 (ET2)   Timer 2 interrupt enable
      * Bit 4 (ES)    Serial port interrupt enable
      * Bit 3 (ET1)   Timer 1 interrupt enable
      * Bit 2 (EX1)   External interrupt 1 enable
@@ -215,7 +227,7 @@ class CpuState {
 
     /**
      * Interrupt Priority at 0xB8 (bit-addressable).
-     * Bit 5 (PT2)  Timer 2 priority (Atmel)
+     * Bit 5 (PT2)  Timer 2 priority
      * Bit 4 (PS)   Serial port priority
      * Bit 3 (PT1)  Timer 1 priority
      * Bit 2 (PX1)  External interrupt 1 priority
@@ -227,10 +239,10 @@ class CpuState {
         get() = sfr[0xB8 - 0x80]
         set(value) { sfr[0xB8 - 0x80] = value }
 
-    // --- Timer 2 (Atmel-specific, 0xC8-0xCD) ---
+    // --- Timer 2 (8052, 0xC8-0xCD) ---
 
     /**
-     * Timer 2 Control at 0xC8 (bit-addressable, Atmel variant).
+     * Timer 2 Control at 0xC8 (bit-addressable).
      * Bit 7 (TF2)    Timer 2 overflow flag
      * Bit 6 (EXF2)   Timer 2 external flag
      * Bit 5 (RCLK)   Receive clock flag
@@ -274,37 +286,37 @@ class CpuState {
     /**
      * Program Status Word at 0xD0 (bit-addressable).
      *
-     * Bit 7 (CY)  Carry flag. Set/cleared by arithmetic and bit operations.
-     * Bit 6 (AC)  Auxiliary Carry flag (BCD operations).
-     * Bit 5 (F0)  Flag 0. Available to the user for general purposes.
+     * Bit 7 (CY)  Carry flag.
+     * Bit 6 (AC)  Auxiliary Carry flag.
+     * Bit 5 (F0)  Flag 0.
      * Bit 4 (RS1) Register bank select high bit.
-     *             00 = Bank 0 (0x00-0x07), 01 = Bank 1 (0x08-0x0F),
-     *             10 = Bank 2 (0x10-0x17), 11 = Bank 3 (0x18-0x1F).
      * Bit 3 (RS0) Register bank select low bit.
-     * Bit 2 (OV)  Overflow flag. Set/cleared by arithmetic instructions.
-     * Bit 1 (—)   Reserved (user-definable in some variants).
-     * Bit 0 (P)   Parity flag. Set/cleared each instruction cycle to indicate
-     *             odd/even number of 1-bits in the accumulator (even parity).
+     * Bit 2 (OV)  Overflow flag.
+     * Bit 1 (F1)  User-definable flag.
+     * Bit 0 (P)   Parity flag (read-only; automatically reflects odd parity of ACC).
      */
     var PSW: UByte
         get() = sfr[0xD0 - 0x80]
         set(value) {
-            sfr[0xD0 - 0x80] = value
-            registerBankBase = ((value.toInt() shr 3) and 0x03) * 8
+            val fixed = (value.toInt() and 0xFE) or parityBit()
+            sfr[0xD0 - 0x80] = fixed.toUByte()
+            registerBankBase = ((fixed shr 3) and 0x03) * 8
         }
 
     /**
-     * Accumulator at 0xE0 (bit-addressable). The primary working register for
-     * arithmetic, logical, data movement, and shift operations.
+     * Accumulator at 0xE0 (bit-addressable).
      * Setting this value automatically updates the PSW parity bit.
      */
     var ACC: UByte
         get() = sfr[0xE0 - 0x80]
-        set(value) { sfr[0xE0 - 0x80] = value; updateParity() }
+        set(value) {
+            sfr[0xE0 - 0x80] = value
+            updateParity()
+        }
 
     /**
      * B Register at 0xF0 (bit-addressable). Used as the second operand in
-     * MUL AB and DIV AB instructions. General-purpose register otherwise.
+     * MUL AB and DIV AB instructions.
      */
     var B: UByte
         get() = sfr[0xF0 - 0x80]
@@ -316,6 +328,10 @@ class CpuState {
         get() = _pc
         set(value) { _pc = value and 0xFFFF }
 
+    init {
+        reset()
+    }
+
     /** Read a byte from internal RAM (0x00-0x7F) or SFR space (0x80-0xFF).
      *  Returns the raw SFR value (latch for port SFRs). Use readPin() to read the effective
      *  pin state (latch merged with external drive) for port SFRs (P0-P3). */
@@ -324,6 +340,8 @@ class CpuState {
         if (addr < 0x80) {
             return ram[addr]
         }
+        if (addr == 0xA8 || addr == 0xB8) interruptControllerAccessFlag = true
+        if (addr == 0x99) return sbufRx
         return sfr[addr - 0x80]
     }
 
@@ -331,13 +349,13 @@ class CpuState {
      *  port value (latch merged with external drive). For all other addresses, delegates to readDirect(). */
     fun readPin(address: UByte): UByte {
         val addr = address.toInt()
-        if (addr < 0x80) return readDirect(address)
+        if (addr < 0x80) return ram[addr]
         val portIdx = when (addr) {
             0x80 -> 0; 0x90 -> 1; 0xA0 -> 2; 0xB0 -> 3
             else -> -1
         }
         if (portIdx >= 0) return getEffectivePort(portIdx).toUByte()
-        return sfr[addr - 0x80]
+        return readDirect(address)
     }
 
     /** Write a byte to internal RAM (0x00-0x7F) or SFR space (0x80-0xFF).
@@ -348,11 +366,15 @@ class CpuState {
         if (addr < 0x80) {
             ram[addr] = value
         } else {
-            sfr[addr - 0x80] = value
-            if (addr == 0xE0) updateParity()
-            if (addr == 0xD0) registerBankBase = ((value.toInt() shr 3) and 0x03) * 8
-            if (addr == 0xA8 || addr == 0xB8) interruptControllerAccessFlag = true
-            if (addr == 0x99) onSbufTx?.invoke(value)
+            when (addr) {
+                0xD0 -> PSW = value
+                0xE0 -> ACC = value
+                0x99 -> SBUF = value
+                else -> {
+                    sfr[addr - 0x80] = value
+                    if (addr == 0xA8 || addr == 0xB8) interruptControllerAccessFlag = true
+                }
+            }
         }
     }
 
@@ -367,13 +389,20 @@ class CpuState {
         ram[address.toInt()] = value
     }
 
-    /** Reset the CPU to its default state (same as hardware reset). */
+    /** Reset the CPU to its hardware default state (preserves ROM). */
     fun reset() {
         totalCycles = 0L
         interruptControllerAccessFlag = false
         interruptController?.reset()
         timerController?.reset()
-        pc = 0x0000
+        ram.fill(0u)
+        xram.fill(0u)
+        xramDirty = true
+        sfr.fill(0u)
+        sbufTx = 0u
+        sbufRx = 0u
+        _pc = 0x0000
+        registerBankBase = 0
         SP = 0x07u      // Stack starts at 0x07, grows to 0x08+
 
         P0 = 0xFFu
@@ -392,14 +421,11 @@ class CpuState {
         updateParity()
     }
 
-    /** Recalculate the PSW parity bit (P) based on the number of 1-bits in ACC.
-     *  P is set (odd) when the count of 1-bits is odd; cleared (even) when even. */
+    private fun parityBit(): Int = if ((ACC.toInt().countOneBits() and 1) != 0) 0x01 else 0x00
+
+    /** Recalculate the PSW parity bit (P) based on the number of 1-bits in ACC. */
     private fun updateParity() {
-        val ones = ACC.toInt().countOneBits()
-        PSW = if (ones % 2 != 0) {
-            PSW or 0x01u
-        } else {
-            PSW and 0xFEu
-        }
+        val cur = sfr[0xD0 - 0x80].toInt()
+        sfr[0xD0 - 0x80] = ((cur and 0xFE) or parityBit()).toUByte()
     }
 }

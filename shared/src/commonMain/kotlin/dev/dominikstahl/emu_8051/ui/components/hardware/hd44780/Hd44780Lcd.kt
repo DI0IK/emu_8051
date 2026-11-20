@@ -20,6 +20,10 @@ fun Hd44780Lcd(
     cols: Int,
     rawBytes: List<List<Int>> = emptyList(),
     cgramBytes: List<Int> = emptyList(),
+    displayOn: Boolean = true,
+    cursorOn: Boolean = false,
+    blinkOn: Boolean = false,
+    cursorPos: Pair<Int, Int>? = null,
     modifier: Modifier = Modifier,
 ) {
     val cgramArray = remember(cgramBytes) {
@@ -27,7 +31,7 @@ fun Hd44780Lcd(
     }
     val displayLines = if (lines.isEmpty()) listOf("") else lines
     val rawData = if (rawBytes.isNotEmpty()) rawBytes
-        else displayLines.map { line -> line.map { it.code } }
+    else displayLines.map { line -> line.map { it.code } }
 
     val bezel = 3.dp
     val pad = 5.dp
@@ -53,9 +57,12 @@ fun Hd44780Lcd(
 
         drawBezel(totalW, totalH, inset)
         drawInnerBg(inset, totalW, totalH)
-        drawCharGrid(
-            rawData, cols, cgramArray, inset, pad, cellW, cellH, charGap, lineGap
-        )
+        if (displayOn) {
+            drawCharGrid(
+                rawData, cols, cgramArray, cursorOn, blinkOn, cursorPos,
+                inset, pad, cellW, cellH, charGap, lineGap,
+            )
+        }
     }
 }
 
@@ -87,6 +94,9 @@ private fun DrawScope.drawCharGrid(
     rawData: List<List<Int>>,
     cols: Int,
     cgram: ByteArray,
+    cursorOn: Boolean,
+    blinkOn: Boolean,
+    cursorPos: Pair<Int, Int>?,
     inset: Float,
     pad: Dp,
     cellW: Dp,
@@ -110,9 +120,22 @@ private fun DrawScope.drawCharGrid(
 
             val baseX = padPx + inset + colIdx * (cellWPx + charGapPx)
             val baseY = padPx + inset + lineIdx * (cellHPx + lineGapPx)
+            val isCursorCell = cursorPos?.first == lineIdx && cursorPos.second == colIdx
+
+            if (isCursorCell && blinkOn) {
+                drawRect(
+                    color = dotOn.copy(alpha = 0.28f),
+                    topLeft = Offset(baseX, baseY),
+                    size = Size(cellWPx, cellHPx),
+                )
+            }
 
             for (row in 0..7) {
-                val rowBits = pattern.getOrElse(row) { 0 }.toInt() and 0x1F
+                val rowBits = if (isCursorCell && cursorOn && row == 7) {
+                    0x1F
+                } else {
+                    pattern.getOrElse(row) { 0 }.toInt() and 0x1F
+                }
                 for (col in 0..4) {
                     if ((rowBits shr (4 - col)) and 1 != 0) {
                         drawCircle(

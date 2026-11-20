@@ -1,9 +1,12 @@
 package dev.dominikstahl.emu_8051.ui.components.hardware.hd44780
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -32,7 +35,7 @@ class Hd44780Component(config: HwComponentConfig) : HwComponent(config) {
 
     val ctrl = Hd44780Controller(config.lcdCols, config.lcdLines)
 
-    override fun tick(portValues: List<Int>) = ctrl.tick(portValues.firstOrNull() ?: 0)
+    override fun tick(portValues: List<Int>, totalCycles: Long) = ctrl.tick(portValues.firstOrNull() ?: 0)
 
     override fun reset() { ctrl.reset() }
 
@@ -40,6 +43,10 @@ class Hd44780Component(config: HwComponentConfig) : HwComponent(config) {
         lines = ctrl.getDisplayLines(),
         rawBytes = ctrl.getRawLines(),
         cgram = ctrl.getCgramCopy().toList().map { it.toInt() and 0xFF },
+        displayOn = ctrl.displayOn,
+        cursorOn = ctrl.cursorOn,
+        blinkOn = ctrl.blinkOn,
+        cursorPos = ctrl.cursorPosition(),
     )
 }
 
@@ -47,6 +54,10 @@ data class LcdSnapshot(
     val lines: List<String>,
     val rawBytes: List<List<Int>>,
     val cgram: List<Int>,
+    val displayOn: Boolean = true,
+    val cursorOn: Boolean = false,
+    val blinkOn: Boolean = false,
+    val cursorPos: Pair<Int, Int>? = null,
 ) : ComponentSnapshot()
 
 object Hd44780Factory : HwComponentFactory {
@@ -61,6 +72,9 @@ object Hd44780Factory : HwComponentFactory {
 
     override fun needsTick(config: HwComponentConfig) = true
 
+    override fun usedPins(config: HwComponentConfig) =
+        (0..2).map { config.port to it } + (4..7).map { config.port to it }
+
     @Composable
     override fun Render(
         config: HwComponentConfig,
@@ -74,12 +88,18 @@ object Hd44780Factory : HwComponentFactory {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Hd44780Lcd(
-            lines = s?.lines ?: emptyList(),
-            cols = config.lcdCols,
-            rawBytes = s?.rawBytes ?: emptyList(),
-            cgramBytes = s?.cgram ?: emptyList(),
-        )
+        Box(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            Hd44780Lcd(
+                lines = s?.lines ?: List(config.lcdLines) { "" },
+                cols = config.lcdCols,
+                rawBytes = s?.rawBytes ?: emptyList(),
+                cgramBytes = s?.cgram ?: emptyList(),
+                displayOn = s?.displayOn ?: true,
+                cursorOn = s?.cursorOn ?: false,
+                blinkOn = s?.blinkOn ?: false,
+                cursorPos = s?.cursorPos,
+            )
+        }
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -92,7 +112,7 @@ object Hd44780Factory : HwComponentFactory {
 
         var colsExpanded by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Cols", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(40.dp))
+            Text("Cols", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
             ExposedDropdownMenuBox(
                 expanded = colsExpanded,
                 onExpandedChange = { colsExpanded = it },
@@ -119,7 +139,7 @@ object Hd44780Factory : HwComponentFactory {
         }
         var linesExpanded by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Lines", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(40.dp))
+            Text("Lines", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
             ExposedDropdownMenuBox(
                 expanded = linesExpanded,
                 onExpandedChange = { linesExpanded = it },

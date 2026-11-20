@@ -3,7 +3,6 @@
 package dev.dominikstahl.emu_8051.ui.components.hardware
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -28,9 +28,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.dominikstahl.emu_8051.ui.HwComponentConfig
+import dev.dominikstahl.emu_8051.ui.Port
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -62,27 +63,77 @@ fun HardwarePanel(
 ) {
     var selectedTab by remember { mutableStateOf(0) }
 
+    val conflicts = remember(hwConfig) { detectPinConflicts(hwConfig) }
+
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp,
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            TabRow(selectedTabIndex = selectedTab) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Display") })
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Configure") })
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = {
+                        Text(if (conflicts.isEmpty()) "Configure" else "Configure (!)")
+                    },
+                )
             }
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
 
-            if (selectedTab == 0) {
-                DisplayTab(p0, p1, p2, p3, hwConfig, snapshots, onUserInput)
-            } else {
-                ConfigureTab(hwConfig, onAddComponent, onRemoveComponent, onUpdateComponent)
+            Column(
+                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (selectedTab == 0) {
+                    if (conflicts.isNotEmpty()) {
+                        ConflictBanner(conflicts)
+                    }
+                    DisplayTab(p0, p1, p2, p3, hwConfig, snapshots, onUserInput)
+                } else {
+                    ConfigureTab(hwConfig, conflicts, onAddComponent, onRemoveComponent, onUpdateComponent)
+                }
+            }
+        }
+    }
+}
+
+private fun detectPinConflicts(hwConfig: List<HwComponentConfig>): List<String> {
+    val pinOwners = linkedMapOf<Pair<Port, Int>, MutableList<String>>()
+    for (comp in hwConfig) {
+        if (!comp.enabled) continue
+        val factory = HwRegistry.get(comp.type) ?: continue
+        for (pin in factory.usedPins(comp)) {
+            pinOwners.getOrPut(pin) { mutableListOf() }.add(comp.label)
+        }
+    }
+    return pinOwners.entries
+        .filter { it.value.size > 1 }
+        .groupBy({ it.value.distinct().joinToString(" & ") }, { "${it.key.first.name}.${it.key.second}" })
+        .map { (owners, pins) ->
+            val pinSummary = if (pins.size <= 3) pins.joinToString(", ") else "${pins.first()}..${pins.last()}"
+            "Pin conflict on $pinSummary: $owners"
+        }
+}
+
+@Composable
+private fun ConflictBanner(conflicts: List<String>) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+            for (c in conflicts) {
+                Text(
+                    c,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
             }
         }
     }
@@ -134,11 +185,11 @@ private fun DisplayTab(
     }
 }
 
-private fun portValue(p0: Int, p1: Int, p2: Int, p3: Int, port: dev.dominikstahl.emu_8051.ui.Port): Int = when (port) {
-    dev.dominikstahl.emu_8051.ui.Port.P0 -> p0
-    dev.dominikstahl.emu_8051.ui.Port.P1 -> p1
-    dev.dominikstahl.emu_8051.ui.Port.P2 -> p2
-    dev.dominikstahl.emu_8051.ui.Port.P3 -> p3
+private fun portValue(p0: Int, p1: Int, p2: Int, p3: Int, port: Port): Int = when (port) {
+    Port.P0 -> p0
+    Port.P1 -> p1
+    Port.P2 -> p2
+    Port.P3 -> p3
 }
 
 private val typeColors = listOf(
@@ -148,6 +199,7 @@ private val typeColors = listOf(
 @Composable
 private fun ConfigureTab(
     hwConfig: List<HwComponentConfig>,
+    conflicts: List<String>,
     onAddComponent: (String) -> Unit,
     onRemoveComponent: (String) -> Unit,
     onUpdateComponent: (String, (HwComponentConfig) -> HwComponentConfig) -> Unit,
@@ -197,6 +249,10 @@ private fun ConfigureTab(
         }
     }
 
+    if (conflicts.isNotEmpty()) {
+        ConflictBanner(conflicts)
+    }
+
     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
     if (hwConfig.isEmpty()) {
@@ -216,7 +272,7 @@ private fun ConfigureTab(
         Surface(
             shape = RoundedCornerShape(4.dp),
             color = if (expanded) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    else MaterialTheme.colorScheme.surface,
+            else MaterialTheme.colorScheme.surface,
             modifier = Modifier.fillMaxWidth().clickable { expandedItems[comp.id] = !expanded },
         ) {
             Row(
@@ -228,9 +284,18 @@ private fun ConfigureTab(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(start = 4.dp),
                 )
+                Checkbox(
+                    checked = comp.enabled,
+                    onCheckedChange = { enabled ->
+                        onUpdateComponent(comp.id) { it.copy(enabled = enabled) }
+                    },
+                    modifier = Modifier.size(28.dp),
+                )
                 Text(
                     comp.label,
                     style = MaterialTheme.typography.bodySmall,
+                    color = if (comp.enabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
                 )
                 val factory = HwRegistry.get(comp.type)
@@ -250,7 +315,7 @@ private fun ConfigureTab(
 
         AnimatedVisibility(visible = expanded) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 val factory = HwRegistry.get(comp.type)

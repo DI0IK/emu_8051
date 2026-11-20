@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalUnsignedTypes::class)
+
 package dev.dominikstahl.emu_8051.asm
 
 import dev.dominikstahl.emu_8051.engine.Instruction
@@ -10,7 +12,16 @@ fun safeEval(expr: Expr, symbols: SymbolTable, pc: Int, default: Int = 0): Int {
     return try { evalExpr(expr, symbols, pc) } catch (_: Exception) { default }
 }
 
-fun getOperandTypes(expr: Expr, symbols: SymbolTable, pc: Int): List<Pair<Operand, Int>> {
+private fun evalOperand(expr: Expr, symbols: SymbolTable, pc: Int, strict: Boolean): Int {
+    return if (strict) evalExpr(expr, symbols, pc) else safeEval(expr, symbols, pc)
+}
+
+fun getOperandTypes(
+    expr: Expr,
+    symbols: SymbolTable,
+    pc: Int,
+    strict: Boolean = false,
+): List<Pair<Operand, Int>> {
     return when (expr) {
         is Expr.Symbol -> {
             val name = expr.name.uppercase()
@@ -28,13 +39,13 @@ fun getOperandTypes(expr: Expr, symbols: SymbolTable, pc: Int): List<Pair<Operan
                 "R6" -> listOf(Operand.RN to 6)
                 "R7" -> listOf(Operand.RN to 7)
                 else -> {
-                    val v = safeEval(expr, symbols, pc)
+                    val v = evalOperand(expr, symbols, pc, strict)
                     listOf(
-                        Operand.DIRECT to (v and 0xFF),
-                        Operand.BIT to (v and 0xFF),
-                        Operand.REL to (v and 0xFF),
-                        Operand.ADDR11 to (v and 0x7FF),
-                        Operand.ADDR16 to (v and 0xFFFF)
+                        Operand.DIRECT to v,
+                        Operand.BIT to v,
+                        Operand.REL to v,
+                        Operand.ADDR11 to v,
+                        Operand.ADDR16 to v
                     )
                 }
             }
@@ -42,60 +53,58 @@ fun getOperandTypes(expr: Expr, symbols: SymbolTable, pc: Int): List<Pair<Operan
         is Expr.Number -> {
             val v = expr.value
             listOf(
-                Operand.DIRECT to (v and 0xFF),
-                Operand.BIT to (v and 0xFF),
-                Operand.REL to (v and 0xFF),
-                Operand.ADDR11 to (v and 0x7FF),
-                Operand.ADDR16 to (v and 0xFFFF)
+                Operand.DIRECT to v,
+                Operand.BIT to v,
+                Operand.REL to v,
+                Operand.ADDR11 to v,
+                Operand.ADDR16 to v
             )
         }
         is Expr.PCLocation -> {
             listOf(
-                Operand.DIRECT to (pc and 0xFF),
-                Operand.BIT to (pc and 0xFF),
-                Operand.REL to (pc and 0xFF),
-                Operand.ADDR11 to (pc and 0x7FF),
-                Operand.ADDR16 to (pc and 0xFFFF)
+                Operand.DIRECT to pc,
+                Operand.BIT to pc,
+                Operand.REL to pc,
+                Operand.ADDR11 to pc,
+                Operand.ADDR16 to pc
             )
         }
         is Expr.Binary -> {
             if (expr.op == BinaryOp.DOT) {
-                val byteVal = safeEval(expr.left, symbols, pc)
-                val bitVal = safeEval(expr.right, symbols, pc)
-                val bitAddr = (byteVal and 0xF8) or (bitVal and 0x07)
+                val bitAddr = evalOperand(expr, symbols, pc, strict)
                 listOf(Operand.BIT to bitAddr)
             } else {
-                val v = safeEval(expr, symbols, pc)
+                val v = evalOperand(expr, symbols, pc, strict)
                 listOf(
-                    Operand.DIRECT to (v and 0xFF),
-                    Operand.BIT to (v and 0xFF),
-                    Operand.REL to (v and 0xFF),
-                    Operand.ADDR11 to (v and 0x7FF),
-                    Operand.ADDR16 to (v and 0xFFFF)
+                    Operand.DIRECT to v,
+                    Operand.BIT to v,
+                    Operand.REL to v,
+                    Operand.ADDR11 to v,
+                    Operand.ADDR16 to v
                 )
             }
         }
         is Expr.Unary -> {
-            val v = safeEval(expr, symbols, pc)
+            val v = evalOperand(expr, symbols, pc, strict)
             listOf(
-                Operand.DIRECT to (v and 0xFF),
-                Operand.BIT to (v and 0xFF),
-                Operand.REL to (v and 0xFF),
-                Operand.ADDR11 to (v and 0x7FF),
-                Operand.ADDR16 to (v and 0xFFFF)
+                Operand.DIRECT to v,
+                Operand.BIT to v,
+                Operand.REL to v,
+                Operand.ADDR11 to v,
+                Operand.ADDR16 to v
             )
         }
         is Expr.Immediate -> {
-            val v = safeEval(expr.expr, symbols, pc)
-            listOf(Operand.IMM8 to (v and 0xFF), Operand.IMM16 to (v and 0xFFFF))
+            val v = evalOperand(expr.expr, symbols, pc, strict)
+            listOf(Operand.IMM8 to v, Operand.IMM16 to v)
         }
         is Expr.AtReg -> listOf(Operand.RI to expr.index)
         is Expr.AtDPTR -> listOf(Operand.AT_DPTR to 0)
         is Expr.AtAPlusDPTR -> listOf(Operand.AT_A_DPTR to 0)
         is Expr.AtAPlusPC -> listOf(Operand.AT_A_PC to 0)
         is Expr.NotBit -> {
-            val v = safeEval(expr.expr, symbols, pc)
-            listOf(Operand.NOT_BIT to (v and 0xFF))
+            val v = evalOperand(expr.expr, symbols, pc, strict)
+            listOf(Operand.NOT_BIT to v)
         }
     }
 }
@@ -109,31 +118,33 @@ fun findInstruction(
     mnemonic: String,
     exprs: List<Expr>,
     symbols: SymbolTable,
-    pc: Int
+    pc: Int,
+    strict: Boolean = false,
 ): EncodedInstruction? {
     val upper = mnemonic.uppercase()
     val candidates = Instruction.byMnemonic[upper] ?: return null
 
     if (exprs.isEmpty()) {
-        val inst = Instruction.byMnemonic[upper]?.find { it.operands.isEmpty() } ?: return null
+        val inst = candidates.find { it.operands.isEmpty() } ?: return null
         return EncodedInstruction(inst, emptyList())
     }
 
-    val allOptions = exprs.map { getOperandTypes(it, symbols, pc) }
+    val allOptions = exprs.map { getOperandTypes(it, symbols, pc, strict) }
 
-    fun <T> cartesianProduct(lists: List<List<T>>): Sequence<List<T>> = when {
-        lists.isEmpty() -> sequenceOf(emptyList())
-        else -> lists.first().asSequence().flatMap { e ->
-            cartesianProduct(lists.drop(1)).map { listOf(e) + it }
+    for (inst in candidates) {
+        if (inst.operands.size != allOptions.size) continue
+        var matched = true
+        val classified = ArrayList<Pair<Operand, Int>>(allOptions.size)
+        for (i in inst.operands.indices) {
+            val expected = inst.operands[i]
+            val match = allOptions[i].firstOrNull { it.first == expected }
+            if (match == null) {
+                matched = false
+                break
+            }
+            classified.add(match)
         }
-    }
-
-    for (combo in cartesianProduct(allOptions)) {
-        val types = combo.map { it.first }
-        val inst = Instruction.lookup(upper, *types.toTypedArray())
-        if (inst != null) {
-            return EncodedInstruction(inst, combo)
-        }
+        if (matched) return EncodedInstruction(inst, classified)
     }
     return null
 }
@@ -141,31 +152,66 @@ fun findInstruction(
 fun encodeOperandBytes(
     instruction: Instruction,
     classified: List<Pair<Operand, Int>>,
-    pc: Int
+    pc: Int,
+    line: Int = 0,
+    warnings: MutableList<AssemblyWarning>? = null,
 ): List<Int> {
     val bytes = mutableListOf<Int>()
-    for ((type, value) in classified) {
+
+    // 8051 MOV direct, direct (0x85) encodes [0x85, src, dest] while ASM syntax is MOV dest, src
+    val ordered = if (instruction == Instruction.MOV_DIRECT_DIRECT && classified.size == 2) {
+        listOf(classified[1], classified[0])
+    } else {
+        classified
+    }
+
+    for ((type, value) in ordered) {
         when (type) {
-            Operand.IMM8 -> bytes.add(value and 0xFF)
+            Operand.IMM8 -> {
+                if (value !in -128..255) {
+                    warnings?.add(AssemblyWarning(line, "Immediate value $value truncated to 8 bits (0x${(value and 0xFF).toString(16).uppercase()})"))
+                }
+                bytes.add(value and 0xFF)
+            }
             Operand.IMM16 -> {
+                if (value !in -32768..65535) {
+                    warnings?.add(AssemblyWarning(line, "Immediate value $value truncated to 16 bits"))
+                }
                 bytes.add((value shr 8) and 0xFF)
                 bytes.add(value and 0xFF)
             }
-            Operand.DIRECT -> bytes.add(value and 0xFF)
-            Operand.BIT -> bytes.add(value and 0xFF)
-            Operand.NOT_BIT -> bytes.add(value and 0xFF)
+            Operand.DIRECT -> {
+                if (value !in 0..255) throw AssemblerException("Direct address out of range (0..255): $value")
+                bytes.add(value and 0xFF)
+            }
+            Operand.BIT, Operand.NOT_BIT -> {
+                if (value !in 0..255) throw AssemblerException("Bit address out of range (0..255): $value")
+                bytes.add(value and 0xFF)
+            }
             Operand.REL -> {
                 val offset = value - (pc + instruction.bytes)
+                if (offset !in -128..127) {
+                    throw AssemblerException("Relative jump offset $offset out of range (-128..127)")
+                }
                 bytes.add(offset and 0xFF)
             }
             Operand.ADDR11 -> {
+                val nextPc = (pc + 2) and 0xFFFF
+                if (value !in 0..0xFFFF || (value and 0xF800) != (nextPc and 0xF800)) {
+                    throw AssemblerException(
+                        "11-bit address 0x${value.toString(16).uppercase()} outside 2KB page 0x${(nextPc and 0xF800).toString(16).uppercase()}"
+                    )
+                }
                 bytes.add(value and 0xFF)
             }
             Operand.ADDR16 -> {
+                if (value !in 0..0xFFFF) {
+                    throw AssemblerException("16-bit target address out of range (0..65535): $value")
+                }
                 bytes.add((value shr 8) and 0xFF)
                 bytes.add(value and 0xFF)
             }
-            Operand.A, Operand.C, Operand.AB, Operand.DPTR -> {}
+            Operand.A, Operand.C, Operand.AB, Operand.DPTR,
             Operand.RN, Operand.RI, Operand.AT_DPTR, Operand.AT_A_DPTR, Operand.AT_A_PC -> {}
         }
     }
@@ -174,8 +220,25 @@ fun encodeOperandBytes(
 
 private data class Record(
     val stmt: Stmt,
-    val address: Int
+    val address: Int,
+    val line: Int,
 )
+
+private fun StatementLine(stmt: Stmt): Int = when (stmt) {
+    is Stmt.Org -> stmt.line
+    is Stmt.End -> stmt.line
+    is Stmt.Equ -> stmt.line
+    is Stmt.Data -> stmt.line
+    is Stmt.Bit -> stmt.line
+    is Stmt.Code -> stmt.line
+    is Stmt.Db -> stmt.line
+    is Stmt.Dw -> stmt.line
+    is Stmt.Ds -> stmt.line
+    is Stmt.Instruction -> stmt.line
+    is Stmt.Label -> stmt.line
+    is Stmt.ErrorMsg -> stmt.line
+    Stmt.Blank -> 0
+}
 
 fun assembleInternal(statements: List<Stmt>): AssemblyResult {
     val symbols = SymbolTable()
@@ -188,34 +251,52 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
     val records = mutableListOf<Record>()
     var endEncountered = false
 
+    fun defineConstant(symbol: String, expr: Expr, type: SymType, line: Int) {
+        try {
+            val v = evalExpr(expr, symbols, pc)
+            symbols.set(symbol, v, type, line)
+        } catch (e: AssemblerException) {
+            if (e.message?.startsWith("Undefined symbol:") == true) {
+                symbols.defer(symbol, expr, type, pc, line)
+            } else {
+                errors.add(AssemblyError(line, e.message ?: "Symbol definition error"))
+            }
+        }
+    }
+
     for (stmt in statements) {
         if (endEncountered) break
+        val line = StatementLine(stmt)
 
         try {
             when (stmt) {
                 is Stmt.Org -> {
-                    pc = try {
-                        evalExpr(stmt.expr, symbols, pc)
-                    } catch (e: Exception) {
-                        errors.add(AssemblyError(0, "ORG expression error: ${e.message}"))
+                    val newPc = evalExpr(stmt.expr, symbols, pc)
+                    if (newPc !in 0..0xFFFF) {
+                        errors.add(AssemblyError(stmt.line, "ORG address out of range (0..65535): $newPc"))
                         break
                     }
+                    pc = newPc
                 }
                 is Stmt.End -> { endEncountered = true }
-                is Stmt.Equ -> symbols.defer(stmt.symbol, stmt.expr)
-                is Stmt.Data -> symbols.defer(stmt.symbol, stmt.expr)
-                is Stmt.Bit -> symbols.defer(stmt.symbol, stmt.expr)
-                is Stmt.Code -> symbols.defer(stmt.symbol, stmt.expr)
+                is Stmt.Equ -> defineConstant(stmt.symbol, stmt.expr, SymType.EQU, stmt.line)
+                is Stmt.Data -> defineConstant(stmt.symbol, stmt.expr, SymType.DATA, stmt.line)
+                is Stmt.Bit -> defineConstant(stmt.symbol, stmt.expr, SymType.BIT, stmt.line)
+                is Stmt.Code -> defineConstant(stmt.symbol, stmt.expr, SymType.CODE, stmt.line)
                 is Stmt.Label -> {
-                    symbols.set(stmt.name, pc, SymType.LABEL)
+                    symbols.set(stmt.name, pc, SymType.LABEL, stmt.line)
                 }
                 is Stmt.Instruction -> {
                     if (stmt.label != null) {
-                        symbols.set(stmt.label, pc, SymType.LABEL)
+                        symbols.set(stmt.label, pc, SymType.LABEL, stmt.line)
                     }
-                    val result = findInstruction(stmt.mnemonic, stmt.operands, symbols, pc)
+                    val result = findInstruction(stmt.mnemonic, stmt.operands, symbols, pc, strict = false)
                     if (result != null) {
-                        records.add(Record(stmt, pc))
+                        if (pc + result.instruction.bytes > 0x10000) {
+                            errors.add(AssemblyError(stmt.line, "Program exceeds 64KB ROM limit at 0x${pc.toString(16).uppercase()}"))
+                            break
+                        }
+                        records.add(Record(stmt, pc, stmt.line))
                         pc += result.instruction.bytes
                     } else if (stmt.mnemonic.uppercase() !in Instruction.byMnemonic) {
                         errors.add(AssemblyError(stmt.line, "Unknown mnemonic: ${stmt.mnemonic}"))
@@ -225,7 +306,7 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                 }
                 is Stmt.Db -> {
                     if (stmt.label != null) {
-                        symbols.set(stmt.label, pc, SymType.LABEL)
+                        symbols.set(stmt.label, pc, SymType.LABEL, stmt.line)
                     }
                     var size = 0
                     for (item in stmt.values) {
@@ -234,57 +315,81 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                             is DbItem.StringValue -> size += item.string.length
                         }
                     }
-                    records.add(Record(stmt, pc))
+                    if (pc + size > 0x10000) {
+                        errors.add(AssemblyError(stmt.line, "DB exceeds 64KB ROM limit"))
+                        break
+                    }
+                    records.add(Record(stmt, pc, stmt.line))
                     pc += size
                 }
                 is Stmt.Dw -> {
                     if (stmt.label != null) {
-                        symbols.set(stmt.label, pc, SymType.LABEL)
+                        symbols.set(stmt.label, pc, SymType.LABEL, stmt.line)
                     }
-                    records.add(Record(stmt, pc))
-                    pc += stmt.values.size * 2
+                    val size = stmt.values.size * 2
+                    if (pc + size > 0x10000) {
+                        errors.add(AssemblyError(stmt.line, "DW exceeds 64KB ROM limit"))
+                        break
+                    }
+                    records.add(Record(stmt, pc, stmt.line))
+                    pc += size
                 }
                 is Stmt.Ds -> {
                     if (stmt.label != null) {
-                        symbols.set(stmt.label, pc, SymType.LABEL)
+                        symbols.set(stmt.label, pc, SymType.LABEL, stmt.line)
                     }
-                    val count = try {
-                        evalExpr(stmt.count, symbols, pc)
-                    } catch (e: Exception) {
-                        errors.add(AssemblyError(0, "DS count error: ${e.message}"))
-                        0
+                    val count = evalExpr(stmt.count, symbols, pc)
+                    if (count < 0) {
+                        errors.add(AssemblyError(stmt.line, "DS count cannot be negative: $count"))
+                    } else if (pc + count > 0x10000) {
+                        errors.add(AssemblyError(stmt.line, "DS exceeds 64KB ROM limit"))
+                        break
+                    } else {
+                        pc += count
                     }
-                    if (count > 0) pc += count
                 }
                 is Stmt.Blank -> {}
                 is Stmt.ErrorMsg -> errors.add(AssemblyError(stmt.line, stmt.message))
             }
         } catch (e: AssemblerException) {
-            errors.add(AssemblyError(0, e.message ?: "Assembly error"))
+            errors.add(AssemblyError(line, e.message ?: "Assembly error"))
         }
     }
 
     // Resolve deferred symbols (EQU, DATA, BIT, CODE)
-    symbols.resolveDeferred(0)
+    errors.addAll(symbols.resolveDeferred())
 
     if (errors.isNotEmpty()) return AssemblyResult.failure(errors, warnings)
 
     val sourceMap = mutableMapOf<Int, Int>()
     for (rec in records) {
-        when (val stmt = rec.stmt) {
-            is Stmt.Instruction -> sourceMap[stmt.line] = rec.address
-            else -> {}
+        if (rec.stmt is Stmt.Instruction) {
+            sourceMap[rec.stmt.line] = rec.address
         }
     }
 
     // ---- Pass 2: Encode ----
     val rom = UByteArray(65536)
+    val written = BooleanArray(65536)
+
+    fun writeByte(addr: Int, byteVal: Int, lineNum: Int, warnedOverlap: Boolean): Boolean {
+        if (addr !in 0..65535) throw AssemblerException("ROM address out of range: $addr")
+        var didWarn = warnedOverlap
+        if (written[addr] && !didWarn) {
+            warnings.add(AssemblyWarning(lineNum, "Overwriting previously emitted ROM address 0x${addr.toString(16).uppercase()}"))
+            didWarn = true
+        }
+        written[addr] = true
+        rom[addr] = (byteVal and 0xFF).toUByte()
+        return didWarn
+    }
 
     for (rec in records) {
         try {
+            var warnedOverlap = false
             when (val stmt = rec.stmt) {
                 is Stmt.Instruction -> {
-                    val result = findInstruction(stmt.mnemonic, stmt.operands, symbols, rec.address)
+                    val result = findInstruction(stmt.mnemonic, stmt.operands, symbols, rec.address, strict = true)
                     if (result == null) {
                         errors.add(AssemblyError(stmt.line, "Cannot encode ${stmt.mnemonic}"))
                         continue
@@ -292,11 +397,11 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
 
                     val inst = result.instruction
                     val opcode = computeOpcode(inst, result.classified)
-                    val operandBytes = encodeOperandBytes(inst, result.classified, rec.address)
+                    val operandBytes = encodeOperandBytes(inst, result.classified, rec.address, stmt.line, warnings)
 
-                    rom[rec.address] = opcode.toUByte()
+                    warnedOverlap = writeByte(rec.address, opcode, stmt.line, warnedOverlap)
                     for ((i, b) in operandBytes.withIndex()) {
-                        rom[rec.address + 1 + i] = b.toUByte()
+                        warnedOverlap = writeByte(rec.address + 1 + i, b, stmt.line, warnedOverlap)
                     }
                 }
                 is Stmt.Db -> {
@@ -305,11 +410,14 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                         when (item) {
                             is DbItem.ExprValue -> {
                                 val v = evalExpr(item.expr, symbols, addr)
-                                rom[addr++] = v.toUByte()
+                                if (v !in -128..255) {
+                                    warnings.add(AssemblyWarning(stmt.line, "DB value $v truncated to 8 bits"))
+                                }
+                                warnedOverlap = writeByte(addr++, v, stmt.line, warnedOverlap)
                             }
                             is DbItem.StringValue -> {
                                 for (ch in item.string) {
-                                    rom[addr++] = ch.code.toUByte()
+                                    warnedOverlap = writeByte(addr++, ch.code, stmt.line, warnedOverlap)
                                 }
                             }
                         }
@@ -319,14 +427,17 @@ fun assembleInternal(statements: List<Stmt>): AssemblyResult {
                     var addr = rec.address
                     for (expr in stmt.values) {
                         val v = evalExpr(expr, symbols, addr)
-                        rom[addr++] = ((v shr 8) and 0xFF).toUByte()
-                        rom[addr++] = (v and 0xFF).toUByte()
+                        if (v !in -32768..65535) {
+                            warnings.add(AssemblyWarning(stmt.line, "DW value $v truncated to 16 bits"))
+                        }
+                        warnedOverlap = writeByte(addr++, v shr 8, stmt.line, warnedOverlap)
+                        warnedOverlap = writeByte(addr++, v, stmt.line, warnedOverlap)
                     }
                 }
                 else -> {}
             }
         } catch (e: AssemblerException) {
-            errors.add(AssemblyError(0, e.message ?: "Encoding error"))
+            errors.add(AssemblyError(rec.line, e.message ?: "Encoding error"))
         }
     }
 

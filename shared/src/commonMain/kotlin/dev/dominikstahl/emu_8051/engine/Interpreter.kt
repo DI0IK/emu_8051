@@ -148,19 +148,21 @@ class Interpreter(val state: CpuState) {
 
         state.totalCycles += cycles
 
-        if ((state.TCON.toInt() and (TR0_BIT or TR1_BIT)) != 0 ||
-            (state.T2CON.toInt() and TR2_BIT) != 0
-        ) {
-            repeat(cycles) { timerController.tick() }
+        repeat(cycles) {
+            timerController.tick()
+            interruptController.sample()
         }
-
-        interruptController.sample()
 
         if (opcode != 0x32 && !state.interruptControllerAccessFlag) {
-            interruptController.poll()
+            val intCycles = interruptController.poll()
+            if (intCycles > 0) {
+                state.totalCycles += intCycles
+                repeat(intCycles) {
+                    timerController.tick()
+                    interruptController.sample()
+                }
+            }
         }
-
-        state.totalCycles += interruptController.lastInterruptCycles
 
         return cycles + interruptController.lastInterruptCycles
     }

@@ -1,6 +1,6 @@
 ; Knight rider wave on P1 (8 LEDs)
-; Default config: P1 LED Bar
-; wiring: all 8 LEDs connected to P1 (anodes to VCC, cathodes to P1.0-P1.7 via resistors)
+; Default config: P1 LED Bar (active HIGH)
+; wiring: P1.0-P1.7 -> resistors -> LEDs -> GND
 
         ORG 0000h
         LJMP MAIN
@@ -8,8 +8,8 @@
         ORG 000Bh
         LJMP TIMER0_ISR
 
-MAIN:   MOV SP, #2Fh
-        MOV P1, #0FFh
+MAIN:   MOV SP, #5Fh
+        MOV P1, #00h
 
         MOV TMOD, #01h        ; Timer 0 mode 1 (16-bit)
         MOV TH0, #0F8h        ; ~2ms @ 12MHz
@@ -18,8 +18,8 @@ MAIN:   MOV SP, #2Fh
         SETB EA
         SETB TR0
 
-        MOV A, #01h           ; start pattern: only bit 0 set
-        MOV R0, #00h         ; direction flag: 0=左, 1=
+        MOV A, #01h           ; start pattern: bit 0 set
+        MOV R0, #00h          ; direction flag: 0=left, 1=right
         SJMP $
 
 TIMER0_ISR:
@@ -40,12 +40,14 @@ SHIFT_RIGHT:
         SJMP DONE
 
 TOGGLE_DIR:
+        PUSH ACC
         MOV A, R0
         CJNE A, #00h, SET_LEFT
-        MOV R0, #01h
+        MOV R0, #01h          ; switch to shifting right
+        POP ACC
         SJMP DONE
 SET_LEFT:
-        MOV R0, #00h
-        MOV A, #80h          ; restart from right side
+        MOV R0, #00h          ; switch to shifting left
+        POP ACC
 
 DONE:   RETI

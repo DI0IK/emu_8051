@@ -1,200 +1,101 @@
+@file:OptIn(ExperimentalUnsignedTypes::class)
+
 package dev.dominikstahl.emu_8051.engine
 
-@OptIn(ExperimentalUnsignedTypes::class)
-fun CpuState.add_a_imm(): Int {
-    pc++
+private fun CpuState.addCore(operand: Int, cyIn: Int): Int {
     val a = ACC.toInt()
-    val b = rom[pc++].toInt()
-    val result = a + b
-    val acResult = (a and 0x0F) + (b and 0x0F)
-    val carry6 = ((a and 0x7F) + (b and 0x7F)) shr 7
+    val result = a + operand + cyIn
+    val acResult = (a and 0x0F) + (operand and 0x0F) + cyIn
+    val carry6 = ((a and 0x7F) + (operand and 0x7F) + cyIn) shr 7
     val carry7 = (result shr 8) and 0x01
-    setFlag(CY_BIT, carry7 != 0)
-    setFlag(AC_BIT, (acResult shr 4) != 0)
-    setFlag(OV_BIT, (carry6 xor carry7) != 0)
+    var psw = PSW.toInt() and (CY_BIT or AC_BIT or OV_BIT).inv()
+    if (carry7 != 0) psw = psw or CY_BIT
+    if ((acResult shr 4) != 0) psw = psw or AC_BIT
+    if ((carry6 xor carry7) != 0) psw = psw or OV_BIT
+    PSW = psw.toUByte()
     ACC = (result and 0xFF).toUByte()
     return 1
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
-fun CpuState.add_a_direct(): Int {
-    pc++
+private fun CpuState.subbCore(operand: Int): Int {
     val a = ACC.toInt()
-    val b = readPin(rom[pc++]).toInt()
-    val result = a + b
-    val acResult = (a and 0x0F) + (b and 0x0F)
-    val carry6 = ((a and 0x7F) + (b and 0x7F)) shr 7
-    val carry7 = (result shr 8) and 0x01
-    setFlag(CY_BIT, carry7 != 0)
-    setFlag(AC_BIT, (acResult shr 4) != 0)
-    setFlag(OV_BIT, (carry6 xor carry7) != 0)
+    val pswOld = PSW.toInt()
+    val cyIn = if ((pswOld and CY_BIT) != 0) 1 else 0
+    val result = a - operand - cyIn
+    val acResult = (a and 0x0F) - (operand and 0x0F) - cyIn
+    val borrow6 = if (((a and 0x7F) - (operand and 0x7F) - cyIn) < 0) 1 else 0
+    val borrow7 = if (result < 0) 1 else 0
+    var psw = pswOld and (CY_BIT or AC_BIT or OV_BIT).inv()
+    if (result < 0) psw = psw or CY_BIT
+    if (acResult < 0) psw = psw or AC_BIT
+    if ((borrow6 xor borrow7) != 0) psw = psw or OV_BIT
+    PSW = psw.toUByte()
     ACC = (result and 0xFF).toUByte()
     return 1
+}
+
+fun CpuState.add_a_imm(): Int {
+    pc++
+    return addCore(rom[pc++].toInt(), 0)
+}
+
+fun CpuState.add_a_direct(): Int {
+    pc++
+    return addCore(readPin(rom[pc++]).toInt(), 0)
 }
 
 fun CpuState.add_a_ri(ri: Int): Int {
     pc++
-    val pointer = getRegister(ri)
-    val a = ACC.toInt()
-    val b = readIndirect(pointer).toInt()
-    val result = a + b
-    val acResult = (a and 0x0F) + (b and 0x0F)
-    val carry6 = ((a and 0x7F) + (b and 0x7F)) shr 7
-    val carry7 = (result shr 8) and 0x01
-    setFlag(CY_BIT, carry7 != 0)
-    setFlag(AC_BIT, (acResult shr 4) != 0)
-    setFlag(OV_BIT, (carry6 xor carry7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return addCore(readIndirect(getRegister(ri)).toInt(), 0)
 }
 
 fun CpuState.add_a_rn(rn: Int): Int {
     pc++
-    val a = ACC.toInt()
-    val b = getRegister(rn).toInt()
-    val result = a + b
-    val acResult = (a and 0x0F) + (b and 0x0F)
-    val carry6 = ((a and 0x7F) + (b and 0x7F)) shr 7
-    val carry7 = (result shr 8) and 0x01
-    setFlag(CY_BIT, carry7 != 0)
-    setFlag(AC_BIT, (acResult shr 4) != 0)
-    setFlag(OV_BIT, (carry6 xor carry7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return addCore(getRegister(rn).toInt(), 0)
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.addc_a_imm(): Int {
     pc++
-    val a = ACC.toInt()
-    val b = rom[pc++].toInt()
     val cyIn = if ((PSW.toInt() and CY_BIT) != 0) 1 else 0
-    val result = a + b + cyIn
-    val acResult = (a and 0x0F) + (b and 0x0F) + cyIn
-    val carry6 = ((a and 0x7F) + (b and 0x7F) + cyIn) shr 7
-    val carry7 = (result shr 8) and 0x01
-    setFlag(CY_BIT, carry7 != 0)
-    setFlag(AC_BIT, (acResult shr 4) != 0)
-    setFlag(OV_BIT, (carry6 xor carry7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return addCore(rom[pc++].toInt(), cyIn)
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.addc_a_direct(): Int {
     pc++
-    val a = ACC.toInt()
-    val b = readPin(rom[pc++]).toInt()
     val cyIn = if ((PSW.toInt() and CY_BIT) != 0) 1 else 0
-    val result = a + b + cyIn
-    val acResult = (a and 0x0F) + (b and 0x0F) + cyIn
-    val carry6 = ((a and 0x7F) + (b and 0x7F) + cyIn) shr 7
-    val carry7 = (result shr 8) and 0x01
-    setFlag(CY_BIT, carry7 != 0)
-    setFlag(AC_BIT, (acResult shr 4) != 0)
-    setFlag(OV_BIT, (carry6 xor carry7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return addCore(readPin(rom[pc++]).toInt(), cyIn)
 }
 
 fun CpuState.addc_a_ri(ri: Int): Int {
     pc++
-    val pointer = getRegister(ri)
-    val a = ACC.toInt()
-    val b = readIndirect(pointer).toInt()
     val cyIn = if ((PSW.toInt() and CY_BIT) != 0) 1 else 0
-    val result = a + b + cyIn
-    val acResult = (a and 0x0F) + (b and 0x0F) + cyIn
-    val carry6 = ((a and 0x7F) + (b and 0x7F) + cyIn) shr 7
-    val carry7 = (result shr 8) and 0x01
-    setFlag(CY_BIT, carry7 != 0)
-    setFlag(AC_BIT, (acResult shr 4) != 0)
-    setFlag(OV_BIT, (carry6 xor carry7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return addCore(readIndirect(getRegister(ri)).toInt(), cyIn)
 }
 
 fun CpuState.addc_a_rn(rn: Int): Int {
     pc++
-    val a = ACC.toInt()
-    val b = getRegister(rn).toInt()
     val cyIn = if ((PSW.toInt() and CY_BIT) != 0) 1 else 0
-    val result = a + b + cyIn
-    val acResult = (a and 0x0F) + (b and 0x0F) + cyIn
-    val carry6 = ((a and 0x7F) + (b and 0x7F) + cyIn) shr 7
-    val carry7 = (result shr 8) and 0x01
-    setFlag(CY_BIT, carry7 != 0)
-    setFlag(AC_BIT, (acResult shr 4) != 0)
-    setFlag(OV_BIT, (carry6 xor carry7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return addCore(getRegister(rn).toInt(), cyIn)
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.subb_a_imm(): Int {
     pc++
-    val a = ACC.toInt()
-    val b = rom[pc++].toInt()
-    val cyIn = if ((PSW.toInt() and CY_BIT) != 0) 1 else 0
-    val result = a - b - cyIn
-    val acResult = (a and 0x0F) - (b and 0x0F) - cyIn
-    val borrow6 = if (((a and 0x7F) - (b and 0x7F) - cyIn) < 0) 1 else 0
-    val borrow7 = if (result < 0) 1 else 0
-    setFlag(CY_BIT, result < 0)
-    setFlag(AC_BIT, acResult < 0)
-    setFlag(OV_BIT, (borrow6 xor borrow7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return subbCore(rom[pc++].toInt())
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.subb_a_direct(): Int {
     pc++
-    val a = ACC.toInt()
-    val b = readPin(rom[pc++]).toInt()
-    val cyIn = if ((PSW.toInt() and CY_BIT) != 0) 1 else 0
-    val result = a - b - cyIn
-    val acResult = (a and 0x0F) - (b and 0x0F) - cyIn
-    val borrow6 = if (((a and 0x7F) - (b and 0x7F) - cyIn) < 0) 1 else 0
-    val borrow7 = if (result < 0) 1 else 0
-    setFlag(CY_BIT, result < 0)
-    setFlag(AC_BIT, acResult < 0)
-    setFlag(OV_BIT, (borrow6 xor borrow7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return subbCore(readPin(rom[pc++]).toInt())
 }
 
 fun CpuState.subb_a_ri(ri: Int): Int {
     pc++
-    val pointer = getRegister(ri)
-    val a = ACC.toInt()
-    val b = readIndirect(pointer).toInt()
-    val cyIn = if ((PSW.toInt() and CY_BIT) != 0) 1 else 0
-    val result = a - b - cyIn
-    val acResult = (a and 0x0F) - (b and 0x0F) - cyIn
-    val borrow6 = if (((a and 0x7F) - (b and 0x7F) - cyIn) < 0) 1 else 0
-    val borrow7 = if (result < 0) 1 else 0
-    setFlag(CY_BIT, result < 0)
-    setFlag(AC_BIT, acResult < 0)
-    setFlag(OV_BIT, (borrow6 xor borrow7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return subbCore(readIndirect(getRegister(ri)).toInt())
 }
 
 fun CpuState.subb_a_rn(rn: Int): Int {
     pc++
-    val a = ACC.toInt()
-    val b = getRegister(rn).toInt()
-    val cyIn = if ((PSW.toInt() and CY_BIT) != 0) 1 else 0
-    val result = a - b - cyIn
-    val acResult = (a and 0x0F) - (b and 0x0F) - cyIn
-    val borrow6 = if (((a and 0x7F) - (b and 0x7F) - cyIn) < 0) 1 else 0
-    val borrow7 = if (result < 0) 1 else 0
-    setFlag(CY_BIT, result < 0)
-    setFlag(AC_BIT, acResult < 0)
-    setFlag(OV_BIT, (borrow6 xor borrow7) != 0)
-    ACC = (result and 0xFF).toUByte()
-    return 1
+    return subbCore(getRegister(rn).toInt())
 }
 
 fun CpuState.inc_a(): Int {
@@ -262,8 +163,9 @@ fun CpuState.mul_ab(): Int {
     val a = ACC.toInt()
     val b = B.toInt()
     val product = a * b
-    setFlag(CY_BIT, false)
-    setFlag(OV_BIT, product > 0xFF)
+    var psw = PSW.toInt() and (CY_BIT or OV_BIT).inv()
+    if (product > 0xFF) psw = psw or OV_BIT
+    PSW = psw.toUByte()
     ACC = (product and 0xFF).toUByte()
     B = ((product shr 8) and 0xFF).toUByte()
     return 4
@@ -273,18 +175,17 @@ fun CpuState.div_ab(): Int {
     pc++
     val a = ACC.toInt()
     val b = B.toInt()
-    setFlag(CY_BIT, false)
+    var psw = PSW.toInt() and (CY_BIT or OV_BIT).inv()
     if (b == 0) {
-        setFlag(OV_BIT, true)
+        PSW = (psw or OV_BIT).toUByte()
     } else {
+        PSW = psw.toUByte()
         ACC = (a / b).toUByte()
         B = (a % b).toUByte()
-        setFlag(OV_BIT, false)
     }
     return 4
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun CpuState.da_a(): Int {
     pc++
     var accValue = ACC.toInt()

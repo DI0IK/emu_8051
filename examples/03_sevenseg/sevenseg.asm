@@ -8,7 +8,7 @@
         ORG 000Bh
         LJMP TIMER0_ISR
 
-MAIN:   MOV SP, #2Fh
+MAIN:   MOV SP, #5Fh
         MOV P2, #0FFh
 
         MOV TMOD, #01h        ; Timer 0 mode 1 (16-bit)
@@ -28,7 +28,7 @@ TIMER0_ISR:
 
         INC R1
         MOV A, R1
-        CJNE A, #0FAh, DONE  ; count to 1000 (1 sec @ 1ms)
+        CJNE A, #0FAh, DONE  ; count 250ms @ 1ms per tick
         MOV R1, #00h
 
         MOV A, R0

@@ -1,12 +1,16 @@
 package dev.dominikstahl.emu_8051
 
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
 
 fun main() = application {
+    val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
     Window(
         onCloseRequest = ::exitApplication,
-        title = "emu_8051"
+        state = windowState,
+        title = "emu_8051",
     ) {
         App()
     }

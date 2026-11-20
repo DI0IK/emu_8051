@@ -24,7 +24,6 @@ kotlin {
 
     js {
         browser()
-        binaries.executable()
         compilerOptions {
             freeCompilerArgs.add("-Xir-dce")
         }
@@ -33,10 +32,6 @@ kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
-        binaries.executable()
-        compilerOptions {
-            freeCompilerArgs.addAll(listOf("-Xwasm-opt-level=3"))
-        }
     }
 
     androidLibrary {

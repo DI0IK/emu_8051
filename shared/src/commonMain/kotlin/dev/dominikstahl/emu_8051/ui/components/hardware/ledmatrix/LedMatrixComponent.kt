@@ -14,83 +14,63 @@ import dev.dominikstahl.emu_8051.ui.components.hardware.ComponentSnapshot
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponent
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwComponentFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.HwUserInput
+import dev.dominikstahl.emu_8051.ui.components.hardware.PolarityField
 import dev.dominikstahl.emu_8051.ui.components.hardware.PortFields
 
-class LedMatrixComponent(config: HwComponentConfig) : HwComponent(config) {
-    companion object {
-        private const val MAX_BRIGHTNESS = 8192
-        private const val DECAY = 1
-        private const val THRESHOLD = 1
-    }
+data class LedMatrixSnapshot(val brightness: List<List<Float>>) : ComponentSnapshot()
 
-    // 8x8 display buffer with brightness values (0-255)
-    private val displayBuffer = Array(8) { IntArray(8) }
-    private var lastRowPattern = 0xFF
+class LedMatrixComponent(config: HwComponentConfig) : HwComponent(config) {
+    private val displayBuffer = Array(8) { FloatArray(8) }
+    private var lastTickCycles = 0L
 
     override fun needsTick() = true
 
-    override fun tick(portValues: List<Int>) {
-        val rowVal = portValues.getOrNull(0) ?: return
-        val colVal = portValues.getOrNull(1) ?: return
+    override fun tick(portValues: List<Int>, totalCycles: Long) {
+        val rawRow = portValues.getOrNull(0) ?: return
+        val rawCol = portValues.getOrNull(1) ?: return
 
-        for (r in 0 until 8) {
-            for (c in 0 until 8) {
-                displayBuffer[r][c] = maxOf(0, displayBuffer[r][c] - DECAY)
-            }
+        val rowVal = if (config.activeLow) (rawRow xor 0xFF) and 0xFF else rawRow and 0xFF
+        val colVal = if (config.activeLow) (rawCol xor 0xFF) and 0xFF else rawCol and 0xFF
+
+        val decay = if (totalCycles > 0L) {
+            val delta = (totalCycles - lastTickCycles).coerceAtLeast(0L)
+            lastTickCycles = totalCycles
+            delta / 40_000f
+        } else {
+            0.002f
         }
 
-        val activeRow = findActiveRow(rowVal)
-
-        if (activeRow >= 0 && activeRow < 8) {
-            for (col in 0 until 8) {
-                if ((colVal and (1 shl col)) != 0) {
-                    displayBuffer[activeRow][col] = MAX_BRIGHTNESS
+        if (decay > 0f) {
+            for (r in 0 until 8) {
+                for (c in 0 until 8) {
+                    if (displayBuffer[r][c] > 0f) {
+                        displayBuffer[r][c] = (displayBuffer[r][c] - decay).coerceAtLeast(0f)
+                    }
                 }
             }
         }
 
-        lastRowPattern = rowVal
-    }
-
-    /**
-     * Find which row is active by detecting a single high bit.
-     * Returns -1 if no single row is detected.
-     */
-    private fun findActiveRow(rowVal: Int): Int {
-        var highBitCount = 0
-        var activeBit = -1
-        for (i in 0 until 8) {
-            if ((rowVal and (1 shl i)) != 0) {
-                highBitCount++
-                activeBit = i
+        if (rowVal != 0 && colVal != 0) {
+            for (r in 0 until 8) {
+                if ((rowVal and (1 shl r)) != 0) {
+                    for (c in 0 until 8) {
+                        if ((colVal and (1 shl c)) != 0) {
+                            displayBuffer[r][c] = 1f
+                        }
+                    }
+                }
             }
         }
-        return if (highBitCount == 1) activeBit else -1
     }
 
     override fun reset() {
-        for (r in 0 until 8) {
-            for (c in 0 until 8) {
-                displayBuffer[r][c] = 0
-            }
-        }
-        lastRowPattern = 0x00
+        for (r in 0 until 8) displayBuffer[r].fill(0f)
+        lastTickCycles = 0L
     }
 
-    override fun snapshot(): ComponentSnapshot {
-        val data = (0 until 8).map { r ->
-            (0 until 8).map { c ->
-                displayBuffer[r][c] >= THRESHOLD
-            }
-        }
-        return LedMatrixSnapshot(data)
-    }
-
-    fun getDisplayBuffer(): Array<IntArray> = displayBuffer
-    fun getThreshold(): Int = THRESHOLD
+    override fun snapshot(): ComponentSnapshot =
+        LedMatrixSnapshot((0 until 8).map { r -> displayBuffer[r].toList() })
 }
-
-data class LedMatrixSnapshot(val data: List<List<Boolean>>) : ComponentSnapshot()
 
 object LedMatrixFactory : HwComponentFactory {
     override val typeId = "LED_MATRIX"
@@ -100,9 +80,9 @@ object LedMatrixFactory : HwComponentFactory {
 
     override fun defaultConfig(id: String) = HwComponentConfig(
         id = id,
-        label = "P1/P2 LED Matrix",
+        label = "P1/P2 Matrix",
         type = typeId,
-        ports = listOf(Port.P1, Port.P2)
+        ports = listOf(Port.P1, Port.P2),
     )
 
     override fun labelFor(config: HwComponentConfig): String {
@@ -115,6 +95,14 @@ object LedMatrixFactory : HwComponentFactory {
 
     override fun portCount(config: HwComponentConfig) = 2
 
+    override fun portLabels(config: HwComponentConfig) = listOf("Row Port", "Col Port")
+
+    override fun usedPins(config: HwComponentConfig): List<Pair<Port, Int>> {
+        val rowPort = config.ports.getOrNull(0) ?: Port.P1
+        val colPort = config.ports.getOrNull(1) ?: Port.P2
+        return (0..7).map { rowPort to it } + (0..7).map { colPort to it }
+    }
+
     @Composable
     override fun Render(
         config: HwComponentConfig,
@@ -123,19 +111,17 @@ object LedMatrixFactory : HwComponentFactory {
         onUserInput: (HwUserInput) -> Unit,
     ) {
         val s = snapshot as? LedMatrixSnapshot
-        val rowPort = config.ports.getOrNull(0)?.name ?: "P1"
-        val colPort = config.ports.getOrNull(1)?.name ?: "P2"
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                "$rowPort/$colPort Matrix",
+                labelFor(config),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
             LedMatrixDisplay(
-                data = s?.data ?: List(8) { List(8) { false } },
-                color = Color(0xFFFF4444)
+                brightness = s?.brightness ?: List(8) { List(8) { 0f } },
+                color = Color(0xFFFF4444),
             )
         }
     }
@@ -149,7 +135,9 @@ object LedMatrixFactory : HwComponentFactory {
         PortFields(
             portCount = 2,
             config = config,
-            onUpdateComponent = onUpdateComponent
+            onUpdateComponent = onUpdateComponent,
+            labels = portLabels(config),
         )
+        PolarityField(config, onUpdateComponent)
     }
 }

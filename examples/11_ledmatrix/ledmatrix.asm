@@ -11,7 +11,7 @@
         ORG 000Bh
         LJMP TIMER0_ISR
 
-MAIN:   MOV SP, #2Fh
+MAIN:   MOV SP, #5Fh
         MOV P1, #00h          ; all rows low (off)
         MOV P2, #00h          ; all columns low (all LEDs off)
 

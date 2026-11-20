@@ -1,6 +1,8 @@
 package dev.dominikstahl.emu_8051.platform
 
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class JvmFileStorage : FileStorage {
     private val storageDir: File = run {
@@ -59,7 +61,11 @@ class JvmFileStorage : FileStorage {
 
     override suspend fun rename(oldName: String, newName: String): Boolean {
         return try {
-            File(storageDir, oldName).renameTo(File(storageDir, newName))
+            val oldFile = File(storageDir, oldName)
+            val newFile = File(storageDir, newName)
+            if (!oldFile.exists()) return false
+            Files.move(oldFile.toPath(), newFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            true
         } catch (e: Exception) {
             e.printStackTrace()
             false

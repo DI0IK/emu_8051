@@ -1,21 +1,15 @@
 ; HD44780 16x2 LCD: print "HELLO"
 ; Default config: P2 LCD (16x2)
-; wiring: D4-D7 = P2.4-P2.7, RS = P2.0, RW = GND, E = P2.1
+; wiring: RS = P2.0, RW = P2.1 (GND/0), E = P2.2, D4-D7 = P2.4-P2.7
 ; 4-bit mode
 
         ORG 0000h
         LJMP MAIN
 
-MAIN:   MOV SP, #2Fh
-        MOV P2, #0FFh
+MAIN:   MOV SP, #5Fh
+        MOV P2, #00h
 
-        ; 15ms power-up delay
-        MOV R0, #0FFh
-POWER_UP:
-        MOV R1, #0FFh
-        DJNZ R1, $
-        DJNZ R0, POWER_UP
-
+        LCALL DELAY_5MS
         LCALL INIT_LCD
         LCALL SET_2LINE
         LCALL DISP_ON
@@ -38,14 +32,16 @@ MSG:    DB "HELLO", 00h
 ; 4-bit LCD driver
 INIT_LCD:
         MOV A, #30h
-        LCALL SEND_NIBBLE
+        LCALL PULSE_NIBBLE
         LCALL DELAY_5MS
-        LCALL SEND_NIBBLE
+        MOV A, #30h
+        LCALL PULSE_NIBBLE
         LCALL DELAY_5MS
-        LCALL SEND_NIBBLE
+        MOV A, #30h
+        LCALL PULSE_NIBBLE
         LCALL DELAY_5MS
-        MOV A, #20h         ; 4-bit mode
-        LCALL SEND_NIBBLE
+        MOV A, #20h         ; switch to 4-bit mode
+        LCALL PULSE_NIBBLE
         LCALL DELAY_5MS
         RET
 
@@ -72,30 +68,32 @@ HOME:
         RET
 
 WRITE_CHAR:
-        LCALL SEND_CHAR
-        RET
-
-WRITE_CHAR:
-        ORL A, #01h        ; RS = 1 for data
+        MOV R2, #01h        ; RS = 1 (data), RW = 0
         SJMP SEND_BYTE
 
 SEND_CMD:
-        CLR A               ; RS = 0 for command
+        MOV R2, #00h        ; RS = 0 (command), RW = 0
 SEND_BYTE:
-        MOV R0, A
-        LCALL SEND_NIBBLE
-        MOV A, R0
-        SWAP A             ; send upper nibble
-SEND_NIBBLE:
-        ANL A, #0Fh
-        ANL P2, #0F0h      ; clear lower nibble
-        ORL P2, A          ; set data bits
-        SETB P2.1          ; E = 1
-        CLR P2.1           ; E = 0 (pulse)
+        MOV R3, A           ; save byte
+        ANL A, #0F0h        ; upper nibble -> P2.4..P2.7
+        ORL A, R2
+        LCALL PULSE_NIBBLE
+        MOV A, R3
+        SWAP A              ; lower nibble -> P2.4..P2.7
+        ANL A, #0F0h
+        ORL A, R2
+        LCALL PULSE_NIBBLE
+        RET
+
+PULSE_NIBBLE:
+        MOV P2, A
+        SETB P2.2           ; E = 1
+        NOP
+        CLR P2.2            ; E = 0 (falling edge latches nibble)
         RET
 
 DELAY_5MS:
-        MOV R0, #0FFh
+        MOV R0, #20h
 D1:     MOV R1, #0FFh
         DJNZ R1, $
         DJNZ R0, D1

@@ -32,11 +32,12 @@ class IosFileStorage : FileStorage {
         return try {
             val path = "$storageDir/$name"
             memScoped {
-                val file = fopen(path, "w")
-                    ?: return@memScoped false
-                fputs(content, file)
-                fclose(file)
-                true
+                val file = fopen(path, "w") ?: return@memScoped false
+                try {
+                    fputs(content, file) >= 0
+                } finally {
+                    fclose(file)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -48,16 +49,17 @@ class IosFileStorage : FileStorage {
         return try {
             val path = "$storageDir/$name"
             memScoped {
-                val file = fopen(path, "r")
-                    ?: return@memScoped null
-                val buffer = allocArray<ByteVar>(4096)
-                val sb = StringBuilder()
-                while (true) {
-                    val line = fgets(buffer, 4096, file) ?: break
-                    sb.append(buffer.toKString())
+                val file = fopen(path, "r") ?: return@memScoped null
+                try {
+                    val buffer = allocArray<ByteVar>(4096)
+                    val sb = StringBuilder()
+                    while (fgets(buffer, 4096, file) != null) {
+                        sb.append(buffer.toKString())
+                    }
+                    sb.toString()
+                } finally {
+                    fclose(file)
                 }
-                fclose(file)
-                sb.toString()
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -93,7 +95,12 @@ class IosFileStorage : FileStorage {
     override suspend fun rename(oldName: String, newName: String): Boolean {
         return try {
             val fileManager = NSFileManager.defaultManager
-            fileManager.moveItemAtPath("$storageDir/$oldName", "$storageDir/$newName", null)
+            val src = "$storageDir/$oldName"
+            val dst = "$storageDir/$newName"
+            if (fileManager.fileExistsAtPath(dst)) {
+                fileManager.removeItemAtPath(dst, null)
+            }
+            fileManager.moveItemAtPath(src, dst, null)
         } catch (e: Exception) {
             e.printStackTrace()
             false

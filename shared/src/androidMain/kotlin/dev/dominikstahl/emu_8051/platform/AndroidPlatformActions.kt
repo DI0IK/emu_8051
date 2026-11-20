@@ -6,16 +6,21 @@ import android.content.Context
 import android.content.Intent
 
 actual fun copyToClipboard(text: String) {
-    val manager = AndroidContext.appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    if (!AndroidContext.isInitialized()) return
+    val manager = AndroidContext.appContext.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
     manager.setPrimaryClip(ClipData.newPlainText("emu_8051", text))
 }
 
 actual suspend fun pasteFromClipboard(): String? {
-    val manager = AndroidContext.appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    return manager.primaryClip?.getItemAt(0)?.text?.toString()
+    if (!AndroidContext.isInitialized()) return null
+    val manager = AndroidContext.appContext.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+    val clip = manager.primaryClip ?: return null
+    if (clip.itemCount == 0) return null
+    return clip.getItemAt(0)?.text?.toString()
 }
 
 actual fun platformShare(text: String, title: String) {
+    if (!AndroidContext.isInitialized()) return
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, text)

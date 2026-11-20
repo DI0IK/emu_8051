@@ -1,7 +1,6 @@
 package dev.dominikstahl.emu_8051.ui.components.hardware
 
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.DropdownMenuItem
@@ -10,6 +9,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,17 +21,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.dominikstahl.emu_8051.ui.HwComponentConfig
 import dev.dominikstahl.emu_8051.ui.Port
+import dev.dominikstahl.emu_8051.ui.components.hardware.button.PushButtonFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.buzzer.BuzzerFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.dipswitch.DipSwitchFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.hd44780.Hd44780Factory
 import dev.dominikstahl.emu_8051.ui.components.hardware.keypad.MatrixKeypadFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.led.LedFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.ledbar.LedBarFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.ledmatrix.LedMatrixFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.servo.ServoFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.sevenseg.MultiSevenSegFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.sevenseg.SevenSegFactory
+import dev.dominikstahl.emu_8051.ui.components.hardware.stepper.StepperFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.toggle.ToggleFactory
 import dev.dominikstahl.emu_8051.ui.components.hardware.uart.UartFactory
-import dev.dominikstahl.emu_8051.ui.components.hardware.stepper.StepperFactory
-import dev.dominikstahl.emu_8051.ui.components.hardware.buzzer.BuzzerFactory
-import dev.dominikstahl.emu_8051.ui.components.hardware.servo.ServoFactory
 
 interface PortController {
     fun drive(port: Port, mask: Int, value: Int)
@@ -46,6 +49,13 @@ interface HwComponentFactory {
     fun labelFor(config: HwComponentConfig): String
     fun needsTick(config: HwComponentConfig): Boolean = false
     fun portCount(config: HwComponentConfig): Int = 1
+
+    fun portLabels(config: HwComponentConfig): List<String> =
+        List(portCount(config)) { i -> if (portCount(config) == 1) "Port" else "Port ${i + 1}" }
+
+    fun usedPins(config: HwComponentConfig): List<Pair<Port, Int>> =
+        if (config.pin in 0..7) listOf(config.port to config.pin)
+        else (0..7).map { config.port to it }
 
     @Composable
     fun Render(
@@ -63,7 +73,7 @@ interface HwComponentFactory {
 }
 
 object HwRegistry {
-    private val factories = mutableMapOf<String, HwComponentFactory>()
+    private val factories = linkedMapOf<String, HwComponentFactory>()
 
     fun register(factory: HwComponentFactory) {
         factories[factory.typeId] = factory
@@ -80,7 +90,10 @@ fun registerBuiltinHardwareComponents() {
     HwRegistry.register(LedFactory)
     HwRegistry.register(LedBarFactory)
     HwRegistry.register(SevenSegFactory)
+    HwRegistry.register(MultiSevenSegFactory)
     HwRegistry.register(ToggleFactory)
+    HwRegistry.register(PushButtonFactory)
+    HwRegistry.register(DipSwitchFactory)
     HwRegistry.register(MatrixKeypadFactory)
     HwRegistry.register(Hd44780Factory)
     HwRegistry.register(UartFactory)
@@ -95,10 +108,11 @@ fun registerBuiltinHardwareComponents() {
 fun PortField(
     config: HwComponentConfig,
     onUpdateComponent: (String, (HwComponentConfig) -> HwComponentConfig) -> Unit,
+    label: String = "Port",
 ) {
     var portExpanded by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Port", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(40.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
         ExposedDropdownMenuBox(
             expanded = portExpanded,
             onExpandedChange = { portExpanded = it },
@@ -118,7 +132,9 @@ fun PortField(
                     DropdownMenuItem(
                         text = { Text(p.name) },
                         onClick = {
-                            onUpdateComponent(config.id) { it.copy(ports = it.ports.toMutableList().apply { if (isNotEmpty()) set(0, p) else add(p) }) }
+                            onUpdateComponent(config.id) {
+                                it.copy(ports = it.ports.toMutableList().apply { if (isNotEmpty()) set(0, p) else add(p) })
+                            }
                             portExpanded = false
                         },
                     )
@@ -134,12 +150,14 @@ fun PortFields(
     portCount: Int,
     config: HwComponentConfig,
     onUpdateComponent: (String, (HwComponentConfig) -> HwComponentConfig) -> Unit,
+    labels: List<String> = emptyList(),
 ) {
     for (i in 0 until portCount) {
-        val port = config.ports.getOrNull(i) ?: Port.P1
+        val port = config.ports.getOrNull(i) ?: Port.entries.getOrElse(i + 1) { Port.P1 }
+        val fieldLabel = labels.getOrNull(i) ?: "Port ${i + 1}"
         var portExpanded by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Port ${i + 1}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(50.dp))
+            Text(fieldLabel, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
             ExposedDropdownMenuBox(
                 expanded = portExpanded,
                 onExpandedChange = { portExpanded = it },
@@ -161,7 +179,7 @@ fun PortFields(
                             onClick = {
                                 onUpdateComponent(config.id) { c ->
                                     val newPorts = c.ports.toMutableList()
-                                    while (newPorts.size <= i) newPorts.add(Port.P1)
+                                    while (newPorts.size <= i) newPorts.add(Port.entries.getOrElse(newPorts.size + 1) { Port.P1 })
                                     newPorts[i] = p
                                     c.copy(ports = newPorts)
                                 }
@@ -183,7 +201,7 @@ fun PinField(
 ) {
     var pinExpanded by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Pin", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(40.dp))
+        Text("Pin", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
         ExposedDropdownMenuBox(
             expanded = pinExpanded,
             onExpandedChange = { pinExpanded = it },
@@ -207,5 +225,25 @@ fun PinField(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun PolarityField(
+    config: HwComponentConfig,
+    onUpdateComponent: (String, (HwComponentConfig) -> HwComponentConfig) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "Active LOW",
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.width(64.dp),
+        )
+        Switch(
+            checked = config.activeLow,
+            onCheckedChange = { checked ->
+                onUpdateComponent(config.id) { it.copy(activeLow = checked) }
+            },
+        )
     }
 }

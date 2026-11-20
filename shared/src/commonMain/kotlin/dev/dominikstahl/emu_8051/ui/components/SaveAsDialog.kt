@@ -29,21 +29,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+private val ILLEGAL_FILENAME_CHARS = setOf('<', '>', ':', '"', '/', '\\', '|', '?', '*')
+
+internal fun isValidAsmFileName(raw: String): Boolean {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return false
+    if (trimmed == "." || trimmed == "..") return false
+    if (trimmed.endsWith('.') || trimmed.endsWith(' ')) return false
+    return trimmed.none { it in ILLEGAL_FILENAME_CHARS || it.code < 32 }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SaveAsDialog(
     savedFiles: List<String>,
+    initialName: String? = null,
     onSave: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var fileName by remember { mutableStateOf("program.asm") }
+    var fileName by remember(initialName) { mutableStateOf(initialName ?: "program.asm") }
     var overwriteConfirmed by remember { mutableStateOf(false) }
 
-    val fullName = if (fileName.endsWith(".asm")) fileName else "$fileName.asm"
+    val trimmed = fileName.trim()
+    val fullName = if (trimmed.endsWith(".asm", ignoreCase = true)) trimmed else "$trimmed.asm"
     val exists = fullName in savedFiles
-    val hasInvalidChars = fileName.contains("/") || fileName.contains("\\")
-    val isValid = fileName.isNotBlank() && !hasInvalidChars
+    val isValid = isValidAsmFileName(trimmed)
+    val hasInvalidChars = trimmed.isNotEmpty() && !isValid
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -64,11 +76,11 @@ fun SaveAsDialog(
                 label = { Text("File name") },
                 singleLine = true,
                 isError = hasInvalidChars,
-                supportingText = if (hasInvalidChars) {
-                    { Text("Invalid character: / or \\") }
-                } else if (fileName.isBlank()) {
-                    { Text("Name cannot be empty") }
-                } else null,
+                supportingText = when {
+                    hasInvalidChars -> { { Text("Invalid filename character") } }
+                    trimmed.isEmpty() -> { { Text("Name cannot be empty") } }
+                    else -> null
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
 

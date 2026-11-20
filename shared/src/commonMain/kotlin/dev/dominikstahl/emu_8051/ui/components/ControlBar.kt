@@ -6,12 +6,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -27,27 +31,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Icon
 import dev.dominikstahl.emu_8051.ui.CustomIcons
 import dev.dominikstahl.emu_8051.ui.SpeedMode
 
-private fun ipsLabel(ips: Int): String = when (ips) {
-    10 -> "10"
-    100 -> "100"
-    1_000 -> "1K"
-    100_000 -> "100K"
-    1_000_000 -> "1M"
-    12_000_000 -> "12M"
+private fun ipsLabel(ips: Int): String = when {
+    ips >= 1_000_000 && ips % 1_000_000 == 0 -> "${ips / 1_000_000}M"
+    ips >= 1_000 && ips % 1_000 == 0 -> "${ips / 1_000}K"
     else -> ips.toString()
+}
+
+private fun formatActualCps(cps: Long): String = when {
+    cps >= 1_000_000 -> "${(cps / 100_000) / 10.0}M"
+    cps >= 1_000 -> "${(cps / 100) / 10.0}K"
+    else -> "$cps"
 }
 
 private fun speedLabel(speedMode: SpeedMode, targetIps: Int): String = when (speedMode) {
     SpeedMode.MANUAL -> "Manual"
-    SpeedMode.CUSTOM -> "${ipsLabel(targetIps)} IPS"
+    SpeedMode.CUSTOM -> "${ipsLabel(targetIps)} CPS"
     SpeedMode.UNLIMITED -> "Unlimited"
 }
 
@@ -58,9 +59,12 @@ fun ControlBar(
     actualIps: Long,
     targetIps: Int,
     onStep: () -> Unit,
+    onStepOver: () -> Unit = {},
+    onStepOut: () -> Unit = {},
     onRun: (SpeedMode) -> Unit,
     onPause: () -> Unit,
     onReset: () -> Unit,
+    onExamples: () -> Unit = {},
     onSave: () -> Unit,
     onLoad: () -> Unit,
     onPaste: () -> Unit,
@@ -93,14 +97,15 @@ fun ControlBar(
                         speedMode = speedMode,
                         onReset = onReset,
                         onStep = onStep,
+                        onStepOver = onStepOver,
+                        onStepOut = onStepOut,
                         onRun = onRun,
                         onPause = onPause,
-                        onSetSpeed = onSetSpeed,
                     )
                     SpeedSection(
                         speedMode = speedMode,
                         targetIps = targetIps,
-
+                        actualIps = actualIps,
                         isRunning = isRunning,
                         isSlow = isSlow,
                         showSpeedMenu = showSpeedMenu,
@@ -114,6 +119,9 @@ fun ControlBar(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                 ) {
+                    IconButton(onClick = onExamples) {
+                        Icon(CustomIcons.Examples, contentDescription = "Examples")
+                    }
                     IconButton(onClick = onSave) {
                         Icon(CustomIcons.Save, contentDescription = "Save")
                     }
@@ -139,14 +147,18 @@ fun ControlBar(
                     speedMode = speedMode,
                     onReset = onReset,
                     onStep = onStep,
+                    onStepOver = onStepOver,
+                    onStepOut = onStepOut,
                     onRun = onRun,
                     onPause = onPause,
-                    onSetSpeed = onSetSpeed,
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
+                    IconButton(onClick = onExamples) {
+                        Icon(CustomIcons.Examples, contentDescription = "Examples")
+                    }
                     IconButton(onClick = onSave) {
                         Icon(CustomIcons.Save, contentDescription = "Save")
                     }
@@ -162,7 +174,7 @@ fun ControlBar(
                     SpeedSection(
                         speedMode = speedMode,
                         targetIps = targetIps,
-
+                        actualIps = actualIps,
                         isRunning = isRunning,
                         isSlow = isSlow,
                         showSpeedMenu = showSpeedMenu,
@@ -184,7 +196,7 @@ fun ControlBar(
                 OutlinedTextField(
                     value = dialogIpsText,
                     onValueChange = { dialogIpsText = it.filter { c -> c.isDigit() } },
-                    label = { Text("Instructions per second") },
+                    label = { Text("Machine cycles per second (CPS)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -216,16 +228,23 @@ private fun ActionButtons(
     speedMode: SpeedMode,
     onReset: () -> Unit,
     onStep: () -> Unit,
+    onStepOver: () -> Unit,
+    onStepOut: () -> Unit,
     onRun: (SpeedMode) -> Unit,
     onPause: () -> Unit,
-    onSetSpeed: (SpeedMode) -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         IconButton(onClick = onReset) {
             Icon(Icons.Default.Refresh, contentDescription = "Reset")
         }
         IconButton(onClick = onStep, enabled = !isRunning) {
-            Icon(CustomIcons.SkipNext, contentDescription = "Step")
+            Icon(CustomIcons.SkipNext, contentDescription = "Step Into")
+        }
+        IconButton(onClick = onStepOver, enabled = !isRunning) {
+            Icon(CustomIcons.StepOver, contentDescription = "Step Over")
+        }
+        IconButton(onClick = onStepOut, enabled = !isRunning) {
+            Icon(CustomIcons.StepOut, contentDescription = "Step Out")
         }
         if (isRunning) {
             IconButton(onClick = onPause) {
@@ -249,14 +268,14 @@ private val speedPresets = listOf(
     SpeedPreset("100", 100),
     SpeedPreset("1K", 1_000),
     SpeedPreset("100K", 100_000),
-    SpeedPreset("1M", 1_000_000),
-    SpeedPreset("12M", 12_000_000),
+    SpeedPreset("1M (12 MHz)", 1_000_000),
 )
 
 @Composable
 private fun SpeedSection(
     speedMode: SpeedMode,
     targetIps: Int,
+    actualIps: Long,
     isRunning: Boolean,
     isSlow: Boolean,
     showSpeedMenu: Boolean,
@@ -286,7 +305,7 @@ private fun SpeedSection(
             HorizontalDivider()
             speedPresets.forEach { preset ->
                 DropdownMenuItem(
-                    text = { Text("${preset.label} IPS", style = MaterialTheme.typography.bodySmall) },
+                    text = { Text("${preset.label} CPS", style = MaterialTheme.typography.bodySmall) },
                     onClick = {
                         onToggleSpeedMenu(false)
                         onSetTargetIps(preset.ips)
@@ -305,8 +324,16 @@ private fun SpeedSection(
             )
         }
 
+        if (isRunning && actualIps > 0) {
+            Text(
+                "${formatActualCps(actualIps)}/s",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         if (isRunning && isSlow) {
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(2.dp))
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer,
                 shape = MaterialTheme.shapes.extraSmall,

@@ -18,8 +18,9 @@ class InterruptController(private val state: CpuState) {
     private var lowPriorityInService: Boolean = false
     private var highPriorityInService: Boolean = false
 
-    private var prevInt0: Boolean = false
-    private var prevInt1: Boolean = false
+    // P3 resets to 0xFF (high), so active-low external interrupts start inactive (false)
+    private var prevInt0Low: Boolean = false
+    private var prevInt1Low: Boolean = false
 
     var lastInterruptCycles: Int = 0
 
@@ -46,66 +47,75 @@ class InterruptController(private val state: CpuState) {
             PT2_BIT, IP_ADDR, false),
     )
 
-    /** Sample external interrupt pins and latch edge-triggered flags. Call once per machine cycle. */
+    /** Sample external interrupt pins (active low) and latch edge-triggered flags. Call once per machine cycle. */
     fun sample() {
-        val tcon = state.TCON.toInt()
+        var tcon = state.TCON.toInt()
         val p3 = state.getEffectivePort(3)
-        val int0 = (p3 and 0x04) == 0
-        val int1 = (p3 and 0x08) == 0
+        val int0Low = (p3 and 0x04) == 0
+        val int1Low = (p3 and 0x08) == 0
 
         if ((tcon and IT0_BIT) != 0) {
-            if (prevInt0 && !int0) {
-                state.TCON = ((tcon or IE0_BIT) and 0xFF).toUByte()
+            if (!prevInt0Low && int0Low) {
+                tcon = tcon or IE0_BIT
             }
         } else {
-            if (int0) {
-                state.TCON = ((tcon or IE0_BIT) and 0xFF).toUByte()
-            } else {
-                state.TCON = ((tcon and IE0_BIT.inv()) and 0xFF).toUByte()
-            }
+            tcon = if (int0Low) tcon or IE0_BIT else tcon and IE0_BIT.inv()
         }
 
         if ((tcon and IT1_BIT) != 0) {
-            if (prevInt1 && !int1) {
-                state.TCON = ((tcon or IE1_BIT) and 0xFF).toUByte()
+            if (!prevInt1Low && int1Low) {
+                tcon = tcon or IE1_BIT
             }
         } else {
-            if (int1) {
-                state.TCON = ((tcon or IE1_BIT) and 0xFF).toUByte()
-            } else {
-                state.TCON = ((tcon and IE1_BIT.inv()) and 0xFF).toUByte()
-            }
+            tcon = if (int1Low) tcon or IE1_BIT else tcon and IE1_BIT.inv()
         }
 
-        prevInt0 = int0
-        prevInt1 = int1
+        state.TCON = (tcon and 0xFF).toUByte()
+        prevInt0Low = int0Low
+        prevInt1Low = int1Low
     }
 
-    /** Poll for pending interrupts. Returns the number of cycles consumed (0 or 2). */
+    /** Poll for pending interrupts respecting two-level priority and natural polling order. */
     fun poll(): Int {
         lastInterruptCycles = 0
 
         if ((state.IE.toInt() and EA_BIT) == 0) return 0
+        if (highPriorityInService) return 0
 
-        for (source in sources) {
-            val flagReg = readSFR(source.flagAddr)
-            if ((flagReg.toInt() and source.flagMask) == 0) continue
-
-            val enableReg = readSFR(source.enableAddr)
-            if ((enableReg.toInt() and source.enableMask) == 0) continue
-
-            val ipReg = readSFR(source.priorityAddr)
-            val isHighPriority = (ipReg.toInt() and source.priorityMask) != 0
-
-            if (isHighPriority && highPriorityInService) continue
-            if (!isHighPriority && lowPriorityInService) continue
-
-            acknowledge(source, isHighPriority)
+        // Pass 1: high-priority interrupts (can preempt low-priority ISRs)
+        val highCandidate = findPendingSource(wantHighPriority = true)
+        if (highCandidate != null) {
+            acknowledge(highCandidate, isHighPriority = true)
             lastInterruptCycles = 2
             return 2
         }
 
+        // Pass 2: low-priority interrupts (blocked if either high or low ISR is active)
+        if (!lowPriorityInService) {
+            val lowCandidate = findPendingSource(wantHighPriority = false)
+            if (lowCandidate != null) {
+                acknowledge(lowCandidate, isHighPriority = false)
+                lastInterruptCycles = 2
+                return 2
+            }
+        }
+
         return 0
+    }
+
+    private fun findPendingSource(wantHighPriority: Boolean): InterruptSource? {
+        for (source in sources) {
+            val flagReg = readSFR(source.flagAddr).toInt()
+            if ((flagReg and source.flagMask) == 0) continue
+
+            val enableReg = readSFR(source.enableAddr).toInt()
+            if ((enableReg and source.enableMask) == 0) continue
+
+            val ipReg = readSFR(source.priorityAddr).toInt()
+            val isHigh = (ipReg and source.priorityMask) != 0
+            if (isHigh == wantHighPriority) return source
+        }
+        return null
     }
 
     /** Clear in-service flag for the highest priority level (called by RETI). */
@@ -119,8 +129,8 @@ class InterruptController(private val state: CpuState) {
     fun reset() {
         lowPriorityInService = false
         highPriorityInService = false
-        prevInt0 = false
-        prevInt1 = false
+        prevInt0Low = false
+        prevInt1Low = false
         lastInterruptCycles = 0
     }
 

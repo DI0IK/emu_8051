@@ -10,7 +10,8 @@ fun CpuState.nop(): Int {
 fun CpuState.push_direct(): Int {
     pc++
     val addr = rom[pc++]
-    pushStack(readPin(addr))
+    SP = (SP + 1u).toUByte()
+    ram[SP.toInt()] = readPin(addr)
     return 2
 }
 

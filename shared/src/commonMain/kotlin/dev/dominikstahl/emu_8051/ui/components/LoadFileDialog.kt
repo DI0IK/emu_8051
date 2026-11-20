@@ -95,9 +95,11 @@ fun LoadFileDialog(
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(8.dp))
-                    val fullNewName = if (renameText.endsWith(".asm")) renameText else "$renameText.asm"
-                    val hasInvalidChars = renameText.contains("/") || renameText.contains("\\")
-                    val isValid = renameText.isNotBlank() && !hasInvalidChars && fullNewName != renameTarget
+                    val trimmed = renameText.trim()
+                    val fullNewName = if (trimmed.endsWith(".asm", ignoreCase = true)) trimmed else "$trimmed.asm"
+                    val isValidName = isValidAsmFileName(trimmed)
+                    val hasInvalidChars = trimmed.isNotEmpty() && !isValidName
+                    val isValid = isValidName && fullNewName != renameTarget
                     OutlinedTextField(
                         value = renameText,
                         onValueChange = { renameText = it },
